@@ -1,0 +1,8 @@
+{
+  "name": "Todo List Panel",
+  "description": "Modernes Todo-Listen Panel für Home Assistant – nutzt die offizielle HA todo-Domain. Todos hinzufügen, abhaken und per Swipe löschen.",
+  "render_readme": true,
+  "content_in_root": false,
+  "homeassistant": "2023.11.0",
+  "category": "integration"
+}

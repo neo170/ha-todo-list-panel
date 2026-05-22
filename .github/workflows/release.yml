@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create zip for HACS
+        run: |
+          zip -r todo_list_panel.zip \
+            custom_components/todo_list \
+            www/todo_list_panel \
+            hacs.json \
+            README.md \
+            info.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: todo_list_panel.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

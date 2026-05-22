@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>To-Do Liste – Vorschau</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #e3f2fd 0%, #fce4ec 100%);
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+      font-family: 'Segoe UI', Arial, sans-serif;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+      padding: 2rem 1.75rem 1.75rem;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    h2 {
+      margin: 0 0 1.5rem;
+      text-align: center;
+      color: #1565c0;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── Input row ── */
+    .add-row {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .add-row input {
+      flex: 1;
+      padding: 0.6rem 0.9rem;
+      border-radius: 10px;
+      border: 1.5px solid #90caf9;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .add-row input:focus { border-color: #1976d2; }
+
+    .add-row button {
+      background: linear-gradient(135deg, #1976d2, #42a5f5);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 0.6rem 1.1rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+
+    .add-row button:hover { opacity: 0.88; }
+    .add-row button:active { transform: scale(0.96); }
+
+    /* ── Todo list ── */
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    /* Swipe container */
+    .swipe-wrapper {
+      position: relative;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    .delete-bg {
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 80px;
+      background: #e53935;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 1.3rem;
+      border-radius: 12px;
+    }
+
+    .todo-item {
+      background: #f5f7fa;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.8rem 1rem;
+      position: relative;
+      transition: transform 0.25s cubic-bezier(.4,0,.2,1), background 0.2s;
+      touch-action: pan-y;
+      user-select: none;
+      will-change: transform;
+    }
+
+    .todo-item.completed .todo-text {
+      text-decoration: line-through;
+      color: #aaa;
+    }
+
+    .todo-left {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .todo-checkbox {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      border: 2px solid #90caf9;
+      background: #fff;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .todo-checkbox.checked {
+      background: #1976d2;
+      border-color: #1976d2;
+    }
+
+    .todo-checkbox.checked::after {
+      content: '✓';
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .todo-text {
+      font-size: 1rem;
+      color: #333;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .del-btn {
+      background: none;
+      border: none;
+      color: #e53935;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0.25rem 0.4rem;
+      border-radius: 6px;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .del-btn:hover { background: #ffebee; }
+
+    /* Slide-out animation */
+    .todo-item.removing {
+      transform: translateX(-100%);
+      opacity: 0;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    /* Empty state */
+    .empty {
+      text-align: center;
+      color: #aaa;
+      padding: 1.5rem 0;
+      font-size: 0.95rem;
+    }
+
+    /* Swipe hint badge */
+    .hint {
+      text-align: center;
+      font-size: 0.78rem;
+      color: #bbb;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>📝 To-Do Liste</h2>
+
+  <div class="add-row">
+    <input id="new-todo-input" type="text" placeholder="Neues To-Do eingeben…" />
+    <button id="add-btn">＋ Hinzufügen</button>
+  </div>
+
+  <ul id="todo-list"></ul>
+  <p class="hint">← Swipe nach links zum Löschen (auf Touch-Geräten)</p>
+</div>
+
+<script>
+  let todos = [
+    { id: '1', text: 'Milch kaufen', done: false },
+    { id: '2', text: 'Hausaufgaben erledigen', done: false },
+    { id: '3', text: 'Meeting vorbereiten', done: true },
+  ];
+
+  const list = document.getElementById('todo-list');
+  const input = document.getElementById('new-todo-input');
+  const addBtn = document.getElementById('add-btn');
+
+  function render() {
+    list.innerHTML = '';
+    if (todos.length === 0) {
+      list.innerHTML = '<li class="empty">Keine To-Dos 🎉</li>';
+      return;
+    }
+    todos.forEach(todo => {
+      const wrapper = document.createElement('li');
+      wrapper.className = 'swipe-wrapper';
+      wrapper.dataset.id = todo.id;
+
+      wrapper.innerHTML = `
+        <div class="delete-bg">🗑️</div>
+        <div class="todo-item${todo.done ? ' completed' : ''}" id="item-${todo.id}">
+          <div class="todo-left">
+            <div class="todo-checkbox${todo.done ? ' checked' : ''}" data-id="${todo.id}"></div>
+            <span class="todo-text">${escapeHtml(todo.text)}</span>
+          </div>
+          <button class="del-btn" data-id="${todo.id}" title="Löschen">✕</button>
+        </div>
+      `;
+      list.appendChild(wrapper);
+
+      // Touch swipe
+      const itemEl = wrapper.querySelector('.todo-item');
+      setupSwipe(itemEl, todo.id);
+    });
+
+    // Checkbox toggle
+    list.querySelectorAll('.todo-checkbox').forEach(cb => {
+      cb.addEventListener('click', () => toggleDone(cb.dataset.id));
+    });
+
+    // Delete button
+    list.querySelectorAll('.del-btn').forEach(btn => {
+      btn.addEventListener('click', () => removeTodo(btn.dataset.id));
+    });
+  }
+
+  function setupSwipe(el, id) {
+    let startX = null;
+    let currentX = 0;
+
+    el.addEventListener('touchstart', e => {
+      startX = e.touches[0].clientX;
+    }, { passive: true });
+
+    el.addEventListener('touchmove', e => {
+      if (startX === null) return;
+      const dx = e.touches[0].clientX - startX;
+      if (dx < 0) {
+        currentX = Math.max(dx, -100);
+        el.style.transform = `translateX(${currentX}px)`;
+      }
+    }, { passive: true });
+
+    el.addEventListener('touchend', () => {
+      if (currentX < -60) {
+        removeTodo(id);
+      } else {
+        el.style.transform = '';
+      }
+      startX = null;
+      currentX = 0;
+    });
+  }
+
+  function removeTodo(id) {
+    const el = document.getElementById('item-' + id);
+    if (!el) return;
+    el.classList.add('removing');
+    el.addEventListener('transitionend', () => {
+      todos = todos.filter(t => t.id !== id);
+      render();
+    }, { once: true });
+  }
+
+  function toggleDone(id) {
+    todos = todos.map(t => t.id === id ? { ...t, done: !t.done } : t);
+    render();
+  }
+
+  function addTodo() {
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    todos.push({ id: Date.now().toString(), text, done: false });
+    input.value = '';
+    render();
+    // Scroll to bottom
+    list.lastElementChild?.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  addBtn.addEventListener('click', addTodo);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') addTodo(); });
+
+  render();
+</script>
+</body>
+</html>
