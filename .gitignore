@@ -9,5 +9,10 @@ __pycache__/
 # macOS
 .DS_Store
 
+# Deploy (enthält Token!)
+deploy.ps1
+deploy.cmd
+README.md
+
 # Zip-Releases
 *.zip
