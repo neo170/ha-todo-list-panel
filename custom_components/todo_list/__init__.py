@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 DOMAIN = "todo_list"
+PANEL_URL = "/todo_list_panel/frontend"
 
 
 async def async_setup(hass, config):
@@ -13,6 +14,10 @@ async def async_setup(hass, config):
     manifest_path = Path(__file__).parent / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     version = manifest.get("version", "0.0.0")
+
+    # JS-Datei aus dem Integration-Verzeichnis ausliefern
+    frontend_path = str(Path(__file__).parent / "frontend")
+    hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
     hass.components.frontend.async_register_built_in_panel(
@@ -23,7 +28,7 @@ async def async_setup(hass, config):
         config={
             "_panel_custom": {
                 "name": "todo-list-panel",
-                "module_url": f"/local/todo_list_panel/todo-list-panel.js?v={version}",
+                "module_url": f"{PANEL_URL}/todo-list-panel.js?v={version}",
                 "embed_iframe": False,
                 "trust_external_script": True,
             }
