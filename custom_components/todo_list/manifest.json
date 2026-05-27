@@ -1,18 +1,18 @@
 ﻿{
     "domain":  "todo_list",
+    "iot_class":  "local_push",
+    "issue_tracker":  "https://github.com/neo170/ha-todo-list-panel/issues",
+    "version":  "1.0.6",
+    "homeassistant":  "2023.11.0",
     "name":  "Todo List Panel",
-    "version":  "1.0.5",
-    "documentation":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel",
-    "issue_tracker":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel/issues",
-    "requirements":  [
-
-                     ],
+    "documentation":  "https://github.com/neo170/ha-todo-list-panel",
+    "codeowners":  [
+                       "@neo170"
+                   ],
     "dependencies":  [
                          "frontend"
                      ],
-    "codeowners":  [
-                       "@YOUR_GITHUB_USER"
-                   ],
-    "iot_class":  "local_push",
-    "homeassistant":  "2023.11.0"
+    "requirements":  [
+
+                     ]
 }
