@@ -4,5 +4,6 @@
   "render_readme": true,
   "content_in_root": false,
   "homeassistant": "2023.11.0",
-  "category": "integration"
+  "category": "integration",
+  "icon": "icon.png"
 }
