@@ -12,6 +12,8 @@ __pycache__/
 # Deploy (enthält Token!)
 deploy.ps1
 deploy.cmd
+deploy-github.ps1
+deploy-github.cmd
 README.md
 
 # Zip-Releases

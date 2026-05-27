@@ -1,12 +1,18 @@
-{
-  "domain": "todo_list",
-  "name": "Todo List Panel",
-  "version": "1.0.0",
-  "documentation": "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel",
-  "issue_tracker": "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel/issues",
-  "requirements": [],
-  "dependencies": ["frontend"],
-  "codeowners": ["@YOUR_GITHUB_USER"],
-  "iot_class": "local_push",
-  "homeassistant": "2023.11.0"
+﻿{
+    "domain":  "todo_list",
+    "name":  "Todo List Panel",
+    "version":  "1.0.2",
+    "documentation":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel",
+    "issue_tracker":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel/issues",
+    "requirements":  [
+
+                     ],
+    "dependencies":  [
+                         "frontend"
+                     ],
+    "codeowners":  [
+                       "@YOUR_GITHUB_USER"
+                   ],
+    "iot_class":  "local_push",
+    "homeassistant":  "2023.11.0"
 }
