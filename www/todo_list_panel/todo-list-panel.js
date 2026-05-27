@@ -230,8 +230,13 @@ class TodoListPanel extends HTMLElement {
       );
       const items = result?.response?.[this._selected]?.items ?? [];
       const active = items.filter(t => t.status !== 'completed');
+      if (!this._itemCreatedAt) this._itemCreatedAt = {};
+      if (active.length >= 1) {
+        const newItem = active[active.length - 1];
+        this._itemCreatedAt[newItem.uid] = Date.now();
+      }
       if (active.length > 1) {
-        const newItem = active[active.length - 1]; 
+        const newItem = active[active.length - 1];
         await this._callWithTimeout(
           this._hass.callWS({
             type: 'todo/item/move',
@@ -366,9 +371,11 @@ class TodoListPanel extends HTMLElement {
     this._detailTodo = this._todos.find(t => t.uid === uid) ?? null;
     if (!this._detailTodo) return;
     const t = this._detailTodo;
-    // Readonly wenn mehr als nur Titel vorhanden, sonst direkt Edit
+    // Edit nur wenn innerhalb der letzten 60s erstellt und keine Notiz/Due
     const hasExtra = t.description || t.due;
-    this._detailEditMode = !hasExtra;
+    const createdAt = this._itemCreatedAt?.[uid];
+    const isRecent = createdAt && (Date.now() - createdAt < 20000);
+    this._detailEditMode = !hasExtra && isRecent;
     this._showDetail();
   }
 
@@ -380,9 +387,11 @@ class TodoListPanel extends HTMLElement {
   }
 
   _showDetail() {
-    const listName = this._lists.find(l => l.id === this._selected)?.name ?? '';
-    const label = this.shadowRoot.getElementById('detail-back-label');
-    if (label) label.textContent = listName;
+    const currentList = this._lists.find(l => l.id === this._selected);
+    const titleEl = this.shadowRoot.getElementById('detail-header-title');
+    if (titleEl && currentList) {
+      titleEl.innerHTML = `<ha-icon icon="${currentList.icon}"></ha-icon><span>${this._esc(currentList.name)}</span>`;
+    }
     this.shadowRoot.getElementById('slider').classList.add('show-detail');
     this.shadowRoot.getElementById('detail-panel').scrollTop = 0;
     this._renderDetailMode();
@@ -500,55 +509,107 @@ class TodoListPanel extends HTMLElement {
     );
   }
 
-  // ── Suche über alle Listen ──────────────────────────────
-  async _showSearchDialog() {
-    const overlay = this.shadowRoot.getElementById('dialog-overlay');
-    const box = this.shadowRoot.getElementById('dialog-box');
-    if (!this._searchOriginalHTML) this._searchOriginalHTML = box.innerHTML;
+  // ── Suche über alle Listen (Mobile: Inline im Mainbereich) ──────────────────────────────
+  _showSearch() {
+    this._searchActive = true;
+    this._searchOriginalList = this._selected;
+    this._sidebarSearchQuery = this._searchQuery || '';
+    
+    const titleEl = this.shadowRoot.getElementById('header-title-text');
+    if (titleEl) titleEl.textContent = 'Suche';
+    const titleIcon = this.shadowRoot.getElementById('header-title-icon');
+    if (titleIcon) titleIcon.setAttribute('icon', 'mdi:magnify');
 
-    const close = () => {
-      // Suchzustand beibehalten (in _searchState)
-      this._searchState = { query: input.value, resultsHTML: results.innerHTML };
-      box.innerHTML = this._searchOriginalHTML;
-      overlay.classList.remove('open');
-    };
+    // Header-Buttons: Such-Icon + Menü ausblenden, X-Button zeigen
+    const searchBtn = this.shadowRoot.getElementById('search-btn');
+    const menuWrap = this.shadowRoot.querySelector('.main-menu-wrap');
+    const titleBtn = this.shadowRoot.getElementById('header-title-btn');
+    const chevron = this.shadowRoot.getElementById('title-chevron');
+    if (searchBtn) searchBtn.style.display = 'none';
+    if (menuWrap) menuWrap.style.display = 'none';
+    if (titleBtn) titleBtn.style.pointerEvents = 'none';
+    if (chevron) chevron.style.display = 'none';
 
-    box.innerHTML = `
-      <h3 style="margin:0 0 1rem;font-size:1.1rem;">Suche</h3>
-      <div style="position:relative;">
-        <input id="search-input" type="text" placeholder="Suchbegriff eingeben…" style="
-          width:100%;padding:0.7rem 2.2rem 0.7rem 0.9rem;border:1px solid var(--divider-color,#e0e0e0);
+    let closeBtn = this.shadowRoot.getElementById('search-close-btn');
+    if (!closeBtn) {
+      closeBtn = document.createElement('ha-icon-button');
+      closeBtn.id = 'search-close-btn';
+      closeBtn.setAttribute('label', 'Suche beenden');
+      closeBtn.innerHTML = '<ha-icon icon="mdi:close"></ha-icon>';
+      closeBtn.addEventListener('click', () => this._closeSearch());
+      menuWrap?.parentNode?.insertBefore(closeBtn, menuWrap.nextSibling);
+    }
+    closeBtn.style.display = '';
+
+    const mainArea = this.shadowRoot.querySelector('.main-area .content');
+    const todoList = this.shadowRoot.getElementById('todo-list');
+    const addRow = this.shadowRoot.querySelector('.add-row');
+    if (!mainArea) return;
+
+    if (addRow) addRow.style.display = 'none';
+    if (todoList) todoList.style.display = 'none';
+
+    let container = this.shadowRoot.getElementById('search-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'search-container';
+      container.style.cssText = 'padding:0.75rem;flex:1;display:flex;flex-direction:column;overflow:hidden;';
+      mainArea.appendChild(container);
+    }
+    container.style.display = '';
+
+    container.innerHTML = `
+      <div style="position:relative;margin-bottom:0.75rem;">
+        <input id="mobile-search-input" type="text" placeholder="Suchen" style="
+          width:100%;padding:0.6rem 2.2rem 0.6rem 0.75rem;border:1px solid var(--divider-color,#e0e0e0);
           border-radius:10px;font-size:1rem;box-sizing:border-box;
-          background:var(--secondary-background-color,#f5f5f5);
-          color:var(--primary-text-color,#333);">
-        <button id="search-clear" title="Löschen" style="
-          position:absolute;right:6px;top:50%;transform:translateY(-50%);
-          border:none;background:none;font-size:1.2rem;cursor:pointer;
-          color:var(--secondary-text-color,#999);padding:0.3rem;display:none;">✕</button>
+          background:var(--card-background-color,#fff);
+          color:var(--primary-text-color,#333);outline:none;">
+        <button id="mobile-search-clear" style="
+          position:absolute;right:8px;top:50%;transform:translateY(-50%);
+          border:none;background:none;font-size:1.1rem;cursor:pointer;
+          color:var(--secondary-text-color,#999);padding:0.2rem;display:none;">✕</button>
       </div>
-      <div id="search-results" style="margin-top:0.75rem;max-height:55vh;overflow-y:auto;"></div>
-      <button id="search-close" style="
-        margin-top:1rem;width:100%;padding:0.6rem;border:none;border-radius:8px;
-        background:var(--secondary-background-color,#f5f5f5);color:var(--primary-text-color,#333);
-        font-size:0.95rem;cursor:pointer;">Schließen</button>
+      <div id="mobile-search-results" style="flex:1;overflow-y:auto;"></div>
     `;
-    overlay.classList.add('open');
 
-    const input = box.querySelector('#search-input');
-    const results = box.querySelector('#search-results');
-    const clearBtn = box.querySelector('#search-clear');
-    box.querySelector('#search-close').addEventListener('click', close);
+    const input = container.querySelector('#mobile-search-input');
+    const clearBtn = container.querySelector('#mobile-search-clear');
+    const results = container.querySelector('#mobile-search-results');
 
-    // Vorherigen Zustand wiederherstellen
-    if (this._searchState) {
-      input.value = this._searchState.query || '';
-      results.innerHTML = this._searchState.resultsHTML || '';
-      if (input.value) clearBtn.style.display = '';
+    if (this._searchQuery) {
+      input.value = this._searchQuery;
+      clearBtn.style.display = '';
+      this._doSearch(input.value.trim(), results);
     }
 
-    // Alle Items aller Listen laden
+    input.addEventListener('input', () => {
+      this._searchQuery = input.value;
+      clearBtn.style.display = input.value ? '' : 'none';
+      this._doSearch(input.value.trim(), results);
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this._closeSearch();
+    });
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      this._searchQuery = '';
+      clearBtn.style.display = 'none';
+      results.innerHTML = '';
+      input.focus();
+    });
+
+    setTimeout(() => input.focus(), 100);
+  }
+
+  async _doSearch(query, resultsEl) {
+    if (!query || query.length < 2) {
+      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Mindestens 2 Zeichen eingeben…</div>';
+      return;
+    }
+
     if (!this._searchAllItems || this._searchAllItems.length === 0) {
-      results.innerHTML = '<div style="font-size:0.85rem;color:var(--secondary-text-color,#999);padding:0.5rem 0;">Lade Listen…</div>';
+      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Lade…</div>';
       this._searchAllItems = [];
       for (const list of this._lists) {
         const items = await new Promise((resolve) => {
@@ -562,79 +623,84 @@ class TodoListPanel extends HTMLElement {
           this._searchAllItems.push({ ...item, listId: list.id, listName: list.name });
         }
       }
-      // Vorherige Ergebnisse neu rendern falls Query vorhanden
-      if (input.value.trim().length >= 2) doSearch();
     }
 
-    const self = this;
-    function doSearch() {
-      const q = input.value.trim().toLowerCase();
-      clearBtn.style.display = q ? '' : 'none';
-      if (q.length < 2) { results.innerHTML = '<div style="font-size:0.85rem;color:var(--secondary-text-color,#999);padding:0.5rem 0;">Mindestens 2 Zeichen eingeben…</div>'; return; }
+    const q = query.toLowerCase();
+    const matches = this._searchAllItems.filter(item =>
+      item.summary.toLowerCase().includes(q) ||
+      (item.description || '').toLowerCase().includes(q)
+    );
 
-      const matches = self._searchAllItems.filter(item =>
-        item.summary.toLowerCase().includes(q) ||
-        (item.description || '').toLowerCase().includes(q)
-      );
-
-      if (matches.length === 0) {
-        results.innerHTML = '<div style="font-size:0.85rem;color:var(--secondary-text-color,#999);padding:0.5rem 0;">Keine Ergebnisse.</div>';
-        return;
-      }
-
-      results.innerHTML = matches.slice(0, 50).map(item => `
-        <div class="search-result-item" data-uid="${item.uid}" data-list="${item.listId}" style="
-          padding:0.6rem 0.5rem;border-bottom:1px solid var(--divider-color,#eee);cursor:pointer;
-          display:flex;flex-direction:column;gap:0.15rem;">
-          <div style="font-size:0.95rem;color:var(--primary-text-color,#333);${item.status === 'completed' ? 'text-decoration:line-through;opacity:0.6;' : ''}">${self._esc(item.summary)}</div>
-          <div style="font-size:0.75rem;color:var(--secondary-text-color,#999);">${self._esc(item.listName)}${item.description ? ' · ' + self._esc(item.description.slice(0, 60)) : ''}</div>
-        </div>
-      `).join('');
-
-      bindResultClicks();
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Keine Ergebnisse.</div>';
+      return;
     }
 
-    function bindResultClicks() {
-      results.querySelectorAll('.search-result-item').forEach(el => {
-        el.addEventListener('click', () => {
-          const uid = el.dataset.uid;
-          const listId = el.dataset.list;
-          // Zustand speichern OHNE Dialog zu zerstören
-          self._searchState = { query: input.value, resultsHTML: results.innerHTML };
-          box.innerHTML = self._searchOriginalHTML;
-          overlay.classList.remove('open');
-          // Zur richtigen Liste wechseln und Detail öffnen
-          if (listId !== self._selected) {
-            self._selected = listId;
-            self._todos = [];
-            self._subscribeItems();
-            const waitForItem = () => {
-              const todo = self._todos.find(t => t.uid === uid);
-              if (todo) { self._detailTodo = todo; self._detailEditMode = false; self._showDetail(); }
-              else setTimeout(waitForItem, 200);
-            };
-            setTimeout(waitForItem, 500);
-          } else {
-            const todo = self._todos.find(t => t.uid === uid);
-            if (todo) { self._detailTodo = todo; self._detailEditMode = false; self._showDetail(); }
-          }
-        });
+    resultsEl.innerHTML = `<div style="padding:0.25rem 0;font-size:0.8rem;color:var(--secondary-text-color,#999);">${matches.length} Ergebnis${matches.length > 1 ? 'se' : ''}</div>
+      <ul class="todo-list" style="margin:0;padding:0;">` +
+      matches.slice(0, 50).map(item => `
+        <li class="swipe-wrapper search-result-li" data-uid="${item.uid}" data-list="${item.listId}">
+          <div class="todo-item">
+            <div class="check-circle ${item.status === 'completed' ? 'done' : ''}"></div>
+            <div class="todo-body">
+              <div class="todo-text ${item.status === 'completed' ? 'done' : ''}">${this._esc(item.summary)}</div>
+              <div class="todo-note-preview">${this._esc(item.listName)}</div>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </li>
+      `).join('') + '</ul>';
+
+    resultsEl.querySelectorAll('.search-result-li').forEach(el => {
+      el.addEventListener('click', () => {
+        const uid = el.dataset.uid;
+        const listId = el.dataset.list;
+        this._searchReturnToResults = true;
+
+        const item = this._searchAllItems.find(i => i.uid === uid && i.listId === listId);
+        if (item) {
+          this._detailTodo = item;
+          this._detailEditMode = false;
+          this._selected = listId;
+          this._showDetail();
+        }
       });
-    }
-
-    // Vorherige Ergebnis-Clicks neu binden
-    if (this._searchState?.resultsHTML) bindResultClicks();
-
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      clearBtn.style.display = 'none';
-      results.innerHTML = '';
-      this._searchState = null;
-      input.focus();
     });
+  }
 
-    input.addEventListener('input', doSearch);
-    setTimeout(() => input.focus(), 100);
+  _closeSearch() {
+    this._searchActive = false;
+    this._searchQuery = '';
+    const container = this.shadowRoot.getElementById('search-container');
+    if (container) container.style.display = 'none';
+    const addRow = this.shadowRoot.querySelector('.add-row');
+    const todoList = this.shadowRoot.getElementById('todo-list');
+    if (addRow) addRow.style.display = '';
+    if (todoList) todoList.style.display = '';
+    // Liste aktualisieren: zurück zur ursprünglichen Liste
+    if (this._searchOriginalList) {
+      this._selected = this._searchOriginalList;
+      this._searchOriginalList = null;
+    }
+    localStorage.setItem('todo_selected_list', this._selected);
+    this._subscribeItems();
+    this._renderSidebar();
+    // Header wiederherstellen
+    const searchBtn = this.shadowRoot.getElementById('search-btn');
+    const menuWrap = this.shadowRoot.querySelector('.main-menu-wrap');
+    const closeBtn = this.shadowRoot.getElementById('search-close-btn');
+    const titleBtn = this.shadowRoot.getElementById('header-title-btn');
+    const chevron = this.shadowRoot.getElementById('title-chevron');
+    if (searchBtn) searchBtn.style.display = '';
+    if (menuWrap) menuWrap.style.display = '';
+    if (closeBtn) closeBtn.style.display = 'none';
+    if (titleBtn) titleBtn.style.pointerEvents = '';
+    if (chevron) chevron.style.display = '';
+    const titleEl = this.shadowRoot.getElementById('header-title-text');
+    const titleIcon = this.shadowRoot.getElementById('header-title-icon');
+    const currentList = this._lists.find(l => l.id === this._selected);
+    if (titleEl) titleEl.textContent = currentList?.name ?? 'To Do';
+    if (titleIcon) titleIcon.setAttribute('icon', currentList?.icon ?? 'mdi:clipboard-list');
   }
 
   // ── Export / Import Dialog ──────────────────────────────
@@ -937,6 +1003,11 @@ class TodoListPanel extends HTMLElement {
     this.shadowRoot.getElementById('slider').classList.remove('show-detail');
     this._detailTodo     = null;
     this._detailEditMode = false;
+
+    // Wenn aus Suche geöffnet (mobile oder sidebar), nichts zurücksetzen
+    if (this._searchReturnToResults) {
+      this._searchReturnToResults = false;
+    }
   }
 
   // ── iOS-Style Swipe ──────────────────────────────────────
@@ -1390,7 +1461,7 @@ class TodoListPanel extends HTMLElement {
           display: block;
           position: relative;
           background: var(--primary-background-color, #f0f4f8);
-          font-family: var(--paper-font-body1_-_font-family, 'Segoe UI', Arial, sans-serif);
+          font-family: var(--ha-font-family, Roboto, sans-serif);
           overflow: hidden;
           /* Füllt den gesamten HA-Panel-Bereich */
           height: 100%;
@@ -1438,6 +1509,49 @@ class TodoListPanel extends HTMLElement {
           flex-direction: column;
           overflow-y: auto;
           padding: 0.5rem 0 1rem;
+          -webkit-user-select: none;
+          user-select: none;
+        }
+
+        .sidebar-search {
+          position: relative;
+          padding: 0.5rem 0.75rem 0.75rem;
+        }
+        .sidebar-search input {
+          width: 100%;
+          padding: 0.55rem 2.2rem 0.55rem 0.75rem;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 10px;
+          font-size: 0.9rem;
+          box-sizing: border-box;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #333);
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .sidebar-search input:focus {
+          border-color: var(--primary-color, #03a9f4);
+        }
+        .sidebar-search-icon {
+          position: absolute;
+          right: 1.1rem;
+          top: 50%;
+          transform: translateY(-50%);
+          opacity: 0.4;
+          pointer-events: none;
+        }
+        .sidebar-search-clear {
+          position: absolute;
+          right: 0.9rem;
+          top: 50%;
+          transform: translateY(-50%);
+          border: none;
+          background: none;
+          font-size: 1rem;
+          cursor: pointer;
+          color: var(--secondary-text-color, #999);
+          padding: 0.2rem 0.3rem;
+          line-height: 1;
         }
 
         .sidebar-item {
@@ -1481,13 +1595,46 @@ class TodoListPanel extends HTMLElement {
         .sidebar-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         .sidebar-item-badge {
-          background: var(--primary-color, #1976d2);
-          color: #fff;
-          border-radius: 10px;
-          font-size: 0.73rem;
-          font-weight: 700;
-          padding: 1px 7px;
-          min-width: 22px;
+          background: var(--secondary-background-color, #f0f0f0);
+          color: var(--secondary-text-color, #666);
+          border-radius: 12px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          padding: 2px 8px;
+          min-width: 20px;
+          text-align: center;
+          margin-left: auto;
+        }
+        .sidebar-drag-placeholder {
+          background: var(--primary-color, #03a9f4);
+          opacity: 0.15;
+          border-radius: 8px;
+          margin: 0;
+          padding: 0;
+        }
+
+        .sidebar-new-list {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.7rem 1rem;
+          margin-top: auto;
+          cursor: pointer;
+          border: none;
+          background: none;
+          width: 100%;
+          text-align: left;
+          font-size: var(--ha-font-size-m, 0.875rem);
+          font-family: var(--ha-font-family, Roboto, sans-serif);
+          color: var(--secondary-text-color, #666);
+          -webkit-tap-highlight-color: transparent;
+          transition: background 0.15s;
+        }
+        .sidebar-new-list:hover { background: var(--secondary-background-color, #f5f5f5); }
+        .sidebar-new-list-icon {
+          font-size: 1.2rem;
+          font-weight: 300;
+          width: 20px;
           text-align: center;
         }
 
@@ -1508,40 +1655,81 @@ class TodoListPanel extends HTMLElement {
           .title-chevron { display: inline; }
         }
 
-        /* Desktop: Chevron verstecken, Picker-Dropdown nicht nötig */
-        @media (min-width: 768px) {
-          .title-chevron { display: none; }
-          .list-picker-dropdown { display: none !important; }
-          /* Titel auf Desktop static, kein Pointer */
-          .header-title-btn { cursor: default; pointer-events: none; }
-          /* Hamburger auf Desktop ausblenden */
-          #menu-btn { display: none; }
+        .header {
+          display: flex;
+          align-items: center;
+          height: var(--header-height);
+          background: var(--app-header-background-color);
+          color: var(--app-header-text-color);
+          border-bottom: var(--app-header-border-bottom);
+          padding: 0;
+          flex-shrink: 0;
+          position: relative;
         }
 
-        /* ── Klickbarer Titel im Header (Mobile: Liste wechseln) ── */
+        .header ha-icon-button {
+          color: var(--app-header-text-color);
+          --mdc-icon-button-size: var(--header-height);
+        }
+
+        .topbar-title {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 1;
+          min-width: 0;
+          height: var(--header-height);
+          font-size: var(--app-header-font-size, var(--ha-font-size-xl));
+          font-weight: var(--ha-font-weight-normal);
+          line-height: var(--header-height);
+        }
+
+        .app-title {
+          display: none;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          position: absolute;
+          left: calc(var(--ha-space-3) + var(--ha-space-6));
+          max-width: 40%;
+          font-size: var(--app-header-font-size, var(--ha-font-size-xl));
+          font-weight: var(--ha-font-weight-normal);
+          line-height: var(--header-height);
+        }
+
         .list-picker-wrap {
           position: relative;
-          flex: 1;
+          flex: 0 1 auto;
           display: flex;
           align-items: stretch;
           justify-content: center;
+          min-width: 0;
+          max-width: 100%;
         }
 
         .header-title-btn {
           background: none;
           border: none;
-          color: var(--app-header-text-color, #fff);
-          font-size: 1.3rem;
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          color: var(--app-header-text-color);
+          font: inherit;
+          font-size: var(--app-header-font-size, var(--ha-font-size-xl));
+          font-weight: var(--ha-font-weight-normal);
+          line-height: var(--header-height);
           display: flex;
           align-items: center;
           justify-content: center;
-          gap: 0.3rem;
+          gap: var(--ha-space-1);
           cursor: pointer;
-          padding: 0;
+          padding: 0 var(--ha-space-2);
           -webkit-tap-highlight-color: transparent;
-          width: 100%;
+          max-width: 100%;
+          white-space: nowrap;
+        }
+
+        #header-title-text {
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .title-chevron { font-size: 0.85rem; opacity: 0.75; }
@@ -1585,58 +1773,90 @@ class TodoListPanel extends HTMLElement {
         .list-picker-item.active { font-weight: 600; color: var(--primary-color, #1976d2); }
         .list-picker-check { margin-left: auto; font-size: 1.1rem; color: var(--primary-color, #1976d2); }
 
-        .list-picker-item.active { color: var(--primary-color, #1976d2); font-weight: 600; }
-
-        .list-picker-check { margin-left: auto; font-size: 1.1rem; color: var(--primary-color, #1976d2); }
-
-        /* ── Header ── */
-        .header {
-          display: flex;
-          align-items: center;
-          height: 56px;
-          background: var(--app-header-background-color, #1976d2);
-          color: var(--app-header-text-color, #fff);
-          padding: 0 4px 0 0;
-          position: sticky;
-          top: 0;
-          z-index: 100;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.18);
-        }
-
-        .icon-btn {
-          background: none;
-          border: none;
-          color: var(--app-header-text-color, #fff);
-          cursor: pointer;
-          padding: 0 14px;
-          height: 56px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          -webkit-tap-highlight-color: transparent;
-          flex-shrink: 0;
-        }
-        .icon-btn:active { background: rgba(255,255,255,0.15); }
-
-        /* Zurück-Button mit Label (Detail-Header) */
-        .detail-back-wide {
-          padding: 0 16px 0 8px;
-          gap: 4px;
-          font-size: 1.3rem;
-          font-weight: 600;
-          max-width: 50%;
-        }
-        .back-label {
+        .detail-header-title {
+          min-width: 0;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          font-size: var(--app-header-font-size, var(--ha-font-size-xl));
+          font-weight: var(--ha-font-weight-normal);
+          line-height: var(--header-height);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--ha-space-1);
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          max-width: 50%;
+          pointer-events: none;
+        }
+
+        .header-actions {
+          display: flex;
+          align-items: center;
+          margin-left: auto;
+        }
+
+        .main-menu-wrap,
+        .detail-menu-wrap {
+          position: relative;
+          display: flex;
+          align-items: center;
+        }
+
+        .main-dropdown,
+        .detail-dropdown {
+          display: none;
+          position: absolute;
+          top: 100%;
+          right: 0;
+          background: var(--card-background-color);
+          border-radius: var(--ha-border-radius-m);
+          box-shadow: var(--ha-box-shadow-m);
+          min-width: 220px;
+          z-index: 500;
+          overflow: hidden;
+        }
+
+        .main-dropdown.open,
+        .detail-dropdown.open {
+          display: block;
+        }
+
+        .main-dropdown button,
+        .detail-dropdown button {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          background: none;
+          border: none;
+          padding: var(--ha-space-3) var(--ha-space-4);
+          font-size: var(--ha-font-size-m);
+          cursor: pointer;
+          text-align: left;
+          color: var(--primary-text-color);
+        }
+
+        .main-dropdown button:hover,
+        .detail-dropdown button:hover {
+          background: var(--secondary-background-color);
+        }
+
+        /* Desktop: Chevron verstecken, Sidebar-Suche verstecken, mobilen Titel verstecken */
+        @media (min-width: 768px) {
+          .title-chevron { display: none; }
+          .sidebar-search { display: none; }
+          .list-picker-dropdown { display: none !important; }
+          #menu-btn { display: none; }
+          .app-title { display: block; }
+          .header-title-btn { pointer-events: none; cursor: default; }
         }
 
         .header-title {
           flex: 1;
-          font-size: 1.3rem;
-          font-weight: 600;
-          letter-spacing: 0.01em;
+          font-size: var(--ha-font-size-xl);
+          font-weight: var(--ha-font-weight-normal);
         }
 
         .header-badge {
@@ -1648,42 +1868,9 @@ class TodoListPanel extends HTMLElement {
           margin-right: 16px;
         }
 
-        /* ── Drei-Punkte-Menü (Listenansicht Header) ── */
-        .main-menu-wrap { position: relative; }
-
-        .main-dropdown {
-          display: none;
-          position: absolute;
-          top: 44px;
-          right: 8px;
-          background: var(--card-background-color, #fff);
-          border-radius: 10px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.18);
-          min-width: 200px;
-          z-index: 500;
-          overflow: hidden;
+        .menu-danger {
+          color: var(--error-color);
         }
-
-        .main-dropdown.open { display: block; }
-
-        .main-dropdown button {
-          display: flex;
-          align-items: center;
-          gap: 0.6rem;
-          width: 100%;
-          background: none;
-          border: none;
-          padding: 0.85rem 1.1rem;
-          font-size: 0.97rem;
-          cursor: pointer;
-          text-align: left;
-          color: var(--primary-text-color, #333);
-          transition: background 0.15s;
-        }
-
-        .main-dropdown button:hover { background: var(--secondary-background-color, #f5f5f5); }
-        .main-dropdown button.danger { color: #e53935; }
-        .main-dropdown button.danger:hover { background: #ffebee; }
 
         /* ── Content ── */
         .content {
@@ -1904,6 +2091,32 @@ class TodoListPanel extends HTMLElement {
         /* ── States ── */
         .empty { text-align: center; color: var(--secondary-text-color, #aaa); padding: 2rem 0; font-size: 0.95rem; }
 
+        .completed-section-label {
+          list-style: none;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 0.5rem;
+          margin: 0.5rem 0 0.2rem;
+          padding: 0.2rem 0.2rem;
+          color: var(--secondary-text-color, #777);
+          font-size: var(--ha-font-size-s);
+          font-weight: var(--ha-font-weight-medium);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+
+        .completed-section-title {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .completed-section-delete {
+          color: var(--secondary-text-color, #777);
+          --mdc-icon-button-size: 32px;
+        }
+
         /* ── Custom Dialog ── */
         .dialog-overlay {
           display: none;
@@ -2021,12 +2234,12 @@ class TodoListPanel extends HTMLElement {
           padding: 0.7rem 0.8rem;
           border-radius: 10px;
           background: var(--secondary-background-color, #f5f5f5);
-          cursor: grab;
+          cursor: default;
           user-select: none;
           -webkit-user-select: none;
           transition: background 0.15s, box-shadow 0.15s;
         }
-        .reorder-item:active { cursor: grabbing; }
+        .reorder-item:active { cursor: default; }
         .reorder-item.dragging {
           background: var(--card-background-color, #fff);
           box-shadow: 0 4px 16px rgba(0,0,0,0.15);
@@ -2041,6 +2254,14 @@ class TodoListPanel extends HTMLElement {
           touch-action: none;
         }
         .reorder-handle:active { cursor: grabbing; }
+        .reorder-placeholder {
+          list-style: none;
+          border-radius: 10px;
+          background: var(--primary-color, #03a9f4);
+          opacity: 0.15;
+          margin: 0;
+          padding: 0;
+        }
 
         /* ── Detail Panel ── */
         .detail-content {
@@ -2218,54 +2439,6 @@ class TodoListPanel extends HTMLElement {
           word-break: break-all;
         }
 
-        /* Edit-Button im Header */
-        #detail-edit-btn {
-          /* erbt .icon-btn */
-        }
-
-        /* ── Drei-Punkt-Menü ── */
-        .detail-menu-wrap {
-          position: relative;
-        }
-
-        #detail-menu-btn {
-          /* erbt .icon-btn */
-        }
-
-        .detail-dropdown {
-          display: none;
-          position: absolute;
-          top: 44px;
-          right: 8px;
-          background: var(--card-background-color, #fff);
-          border-radius: 10px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.18);
-          min-width: 180px;
-          z-index: 500;
-          overflow: hidden;
-        }
-
-        .detail-dropdown.open { display: block; }
-
-        .detail-dropdown button {
-          display: flex;
-          align-items: center;
-          gap: 0.6rem;
-          width: 100%;
-          background: none;
-          border: none;
-          padding: 0.85rem 1.1rem;
-          font-size: 0.97rem;
-          cursor: pointer;
-          text-align: left;
-          color: var(--primary-text-color, #333);
-          transition: background 0.15s;
-        }
-
-        .detail-dropdown button:hover { background: var(--secondary-background-color, #f5f5f5); }
-
-        .detail-dropdown button.danger { color: #e53935; }
-        .detail-dropdown button.danger:hover { background: #ffebee; }
       </style>
 
       <!-- Slider-Wrapper: Liste links, Detail rechts -->
@@ -2273,73 +2446,35 @@ class TodoListPanel extends HTMLElement {
 
       <!-- ── Listenansicht ── -->
       <div class="view" id="list-view">
-        <div class="header">
-          <button class="icon-btn" id="menu-btn" title="Menü">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/>
-            </svg>
-          </button>
-          <!-- Klickbarer Titel (Mobile: Listenwechsel-Dropdown) -->
-          <div class="list-picker-wrap" id="list-picker-wrap">
-            <button class="header-title-btn" id="header-title-btn">
-              <ha-icon id="header-title-icon" icon="mdi:clipboard-list" style="--mdc-icon-size:20px"></ha-icon>
-              <span id="header-title-text">To Do</span>
-              <span class="title-chevron" id="title-chevron">▾</span>
-            </button>
-            <div class="list-picker-dropdown" id="list-picker-dropdown"></div>
+        <div class="header" id="list-header">
+          <ha-icon-button id="menu-btn" label="Menü">
+            <ha-icon icon="mdi:menu"></ha-icon>
+          </ha-icon-button>
+          <span class="app-title">To-Do</span>
+          <div class="topbar-title">
+            <div class="list-picker-wrap" id="list-picker-wrap">
+              <button class="header-title-btn" id="header-title-btn">
+                <ha-icon id="header-title-icon" icon="mdi:clipboard-list"></ha-icon>
+                <span id="header-title-text">To Do</span>
+                <span class="title-chevron" id="title-chevron">▾</span>
+              </button>
+              <div class="list-picker-dropdown" id="list-picker-dropdown"></div>
+            </div>
           </div>
-          <!-- Such-Button -->
-          <button class="icon-btn" id="search-btn" title="Suchen">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-            </svg>
-          </button>
-          <!-- Drei-Punkte-Menü -->
+          <ha-icon-button id="search-btn" label="Suchen">
+            <ha-icon icon="mdi:magnify"></ha-icon>
+          </ha-icon-button>
           <div class="main-menu-wrap">
-            <button class="icon-btn" id="main-menu-btn" title="Mehr">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-              </svg>
-            </button>
+            <ha-icon-button id="main-menu-btn" label="Mehr">
+              <ha-icon icon="mdi:dots-vertical"></ha-icon>
+            </ha-icon-button>
             <div class="main-dropdown" id="main-dropdown">
-              <button id="new-list-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.6">
-                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                </svg>
-                Neue Liste erstellen
-              </button>
-              <button id="list-detail-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.6">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
-                </svg>
-                Detailansicht
-              </button>
-              <button id="rename-list-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.6">
-                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                </svg>
-                Umbenennen
-              </button>
-              <button id="reorder-list-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.6">
-                  <path d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"/>
-                </svg>
-                Reihenfolge ändern
-              </button>
-              <button id="delete-list-btn" class="danger">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 3h6M3 6h18M19 6l-1 14H6L5 6" stroke="#e53935" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M10 11v5M14 11v5" stroke="#e53935" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
-                Liste löschen
-              </button>
-              <hr style="border:none;border-top:1px solid var(--divider-color,#e0e0e0);margin:0.3rem 0;">
-              <button id="export-import-btn">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.6">
-                  <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                </svg>
-                Export / Import
-              </button>
+              <button id="new-list-btn">Neue Liste erstellen</button>
+              <button id="list-detail-btn">Detailansicht</button>
+              <button id="rename-list-btn">Liste umbenennen</button>
+              <button id="reorder-list-btn">Reihenfolge ändern</button>
+              <button id="delete-list-btn" class="menu-danger">Liste löschen</button>
+              <button id="export-import-btn">Export / Import</button>
             </div>
           </div>
         </div>
@@ -2351,8 +2486,8 @@ class TodoListPanel extends HTMLElement {
           <div class="main-area">
             <div class="content">
               <div class="add-row">
-                <input id="new-input" type="text" placeholder="Neuen Eintrag anlegen…" />
-                <button id="add-btn" disabled>＋ Hinzufügen</button>
+                <input id="new-input" type="text" placeholder="Aufgabe hinzufügen…" />
+                <button id="add-btn" disabled style="font-size:1.5rem;line-height:1;padding:0.4rem 0.9rem;">＋</button>
               </div>
 
               <ul class="todo-list" id="todo-list"></ul>
@@ -2363,33 +2498,22 @@ class TodoListPanel extends HTMLElement {
 
       <!-- ── Detailansicht ── -->
       <div class="view" id="detail-panel">
-        <div class="header">
-          <button class="icon-btn detail-back-wide" id="detail-back-btn" title="Zurück">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
-            </svg>
-            <span class="back-label" id="detail-back-label"></span>
-          </button>
-          <span style="flex:1"></span>
-          <button class="icon-btn" id="detail-edit-btn" title="Bearbeiten" style="display:none">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-            </svg>
-          </button>
-          <div class="detail-menu-wrap">
-            <button class="icon-btn" id="detail-menu-btn" title="Mehr">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
-              </svg>
-            </button>
-            <div class="detail-dropdown" id="detail-dropdown">
-              <button class="danger" id="detail-delete-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 3h6M3 6h18M19 6l-1 14H6L5 6" stroke="#e53935" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M10 11v5M14 11v5" stroke="#e53935" stroke-width="1.8" stroke-linecap="round"/>
-                </svg>
-                Eintrag löschen
-              </button>
+        <div class="header detail-header-bar">
+          <ha-icon-button id="detail-back-btn" label="Zurück">
+            <ha-icon icon="mdi:arrow-left"></ha-icon>
+          </ha-icon-button>
+          <span class="detail-header-title" id="detail-header-title"></span>
+          <div class="header-actions">
+            <ha-icon-button id="detail-edit-btn" label="Bearbeiten" style="display:none">
+              <ha-icon icon="mdi:pencil"></ha-icon>
+            </ha-icon-button>
+            <div class="detail-menu-wrap">
+              <ha-icon-button id="detail-menu-btn" label="Mehr">
+                <ha-icon icon="mdi:dots-vertical"></ha-icon>
+              </ha-icon-button>
+              <div class="detail-dropdown" id="detail-dropdown">
+                <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2491,15 +2615,18 @@ class TodoListPanel extends HTMLElement {
       pickerDrop.classList.toggle('open');
     });
 
-    // Such-Button
-    this.shadowRoot.getElementById('search-btn').addEventListener('click', () => this._showSearchDialog());
-
     // Drei-Punkte-Menü (Listenansicht)
     const mainMenuBtn  = this.shadowRoot.getElementById('main-menu-btn');
     const mainDropdown = this.shadowRoot.getElementById('main-dropdown');
     mainMenuBtn.addEventListener('click', e => {
       e.stopPropagation();
       mainDropdown.classList.toggle('open');
+    });
+
+    // Such-Button (im Menü)
+    this.shadowRoot.getElementById('search-btn').addEventListener('click', () => {
+      mainDropdown.classList.remove('open');
+      this._showSearch();
     });
     this.shadowRoot.getElementById('new-list-btn').addEventListener('click', async () => {
       mainDropdown.classList.remove('open');
@@ -2616,7 +2743,6 @@ class TodoListPanel extends HTMLElement {
       this.shadowRoot.getElementById('detail-due-time').value = '';
     });
 
-    // Drei-Punkt-Menü
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
@@ -2636,9 +2762,9 @@ class TodoListPanel extends HTMLElement {
 
     // Klick außerhalb → alle Dropdowns schließen + Swipe-Buttons zuklappen
     this.shadowRoot.addEventListener('click', e => {
-      dropdown.classList.remove('open');
       pickerDrop.classList.remove('open');
       mainDropdown.classList.remove('open');
+      dropdown.classList.remove('open');
       if (!e.target.closest('.delete-action') && !e.target.closest('.todo-item')) {
         this._closeAllRevealed(null);
       }
@@ -2654,11 +2780,23 @@ class TodoListPanel extends HTMLElement {
     // Offene Items pro Liste aus hass.states lesen (best-effort)
     const openPerList = id => {
       const state = this._hass?.states?.[id];
-      return parseInt(state?.attributes?.items_not_completed ?? 0, 10) || 0;
+      // Versuche verschiedene Attribute
+      const count = state?.attributes?.items_not_completed
+        ?? state?.attributes?.pending_items
+        ?? parseInt(state?.state, 10);
+      return isNaN(count) ? 0 : count;
     };
 
     // Sidebar-Items (Desktop) – direkt die Items, kein Heading
-    sidebar.innerHTML = this._lists.map(l => {
+    sidebar.innerHTML = `
+      <div class="sidebar-search">
+        <input type="text" id="sidebar-search-input" placeholder="Suchen" />
+        <button class="sidebar-search-clear" id="sidebar-search-clear" style="display:none;">✕</button>
+        <svg class="sidebar-search-icon" id="sidebar-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
+      </div>
+    ` + this._lists.map(l => {
       const open = openPerList(l.id);
       return `
         <button class="sidebar-item${l.id === this._selected ? ' active' : ''}" data-id="${l.id}">
@@ -2666,11 +2804,145 @@ class TodoListPanel extends HTMLElement {
           <span class="sidebar-item-name">${this._esc(l.name)}</span>
           ${open > 0 ? `<span class="sidebar-item-badge">${open}</span>` : ''}
         </button>`;
-    }).join('');
+    }).join('') + `
+      <button class="sidebar-new-list" id="sidebar-new-list-btn">
+        <span class="sidebar-new-list-icon">+</span>
+        <span>Neue Liste</span>
+      </button>`;
+
+    // Sidebar-Suche
+    const searchInput = this.shadowRoot.getElementById('sidebar-search-input');
+    const searchClear = this.shadowRoot.getElementById('sidebar-search-clear');
+    const searchIcon = this.shadowRoot.getElementById('sidebar-search-icon');
+    if (searchInput) {
+      // Vorherigen Wert wiederherstellen
+      if (this._sidebarSearchQuery) {
+        searchInput.value = this._sidebarSearchQuery;
+        searchClear.style.display = '';
+        searchIcon.style.display = 'none';
+      }
+      searchInput.addEventListener('input', () => {
+        this._sidebarSearchQuery = searchInput.value;
+        const hasText = searchInput.value.length > 0;
+        searchClear.style.display = hasText ? '' : 'none';
+        searchIcon.style.display = hasText ? 'none' : '';
+        this._doSidebarSearch(searchInput.value.trim());
+      });
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          this._sidebarSearchQuery = '';
+          searchClear.style.display = 'none';
+          searchIcon.style.display = '';
+          this._doSidebarSearch('');
+        }
+      });
+      searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        this._sidebarSearchQuery = '';
+        searchClear.style.display = 'none';
+        searchIcon.style.display = '';
+        this._doSidebarSearch('');
+        searchInput.focus();
+      });
+    }
+
+    // "+ Neue Liste" Button
+    this.shadowRoot.getElementById('sidebar-new-list-btn')?.addEventListener('click', () => {
+      this._createNewList();
+    });
 
     // Klick auf Sidebar-Item
     sidebar.querySelectorAll('.sidebar-item').forEach(btn => {
-      btn.addEventListener('click', () => this._selectList(btn.dataset.id));
+      btn.addEventListener('click', () => {
+        if (this._sidebarDragJustEnded) { this._sidebarDragJustEnded = false; return; }
+        this._selectList(btn.dataset.id);
+      });
+
+      // Long-Press Drag für Reihenfolge
+      const startDrag = (clientY) => {
+        if (this._sidebarDragId) return;
+        this._sidebarDragId = btn.dataset.id;
+        if (navigator.vibrate) navigator.vibrate(40);
+
+        const rect = btn.getBoundingClientRect();
+        // Ghost
+        const ghost = btn.cloneNode(true);
+        ghost.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px;margin:0;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0.95;transition:none;pointer-events:none;list-style:none;border-radius:8px;background:var(--card-background-color,#fff);display:flex;align-items:center;gap:0.75rem;padding:0.7rem 1rem;`;
+        this.shadowRoot.appendChild(ghost);
+        this._sidebarGhost = ghost;
+
+        // Placeholder
+        const ph = document.createElement('div');
+        ph.className = 'sidebar-drag-placeholder';
+        ph.style.height = rect.height + 'px';
+        btn.replaceWith(ph);
+        this._sidebarPh = ph;
+        this._sidebarDragBtn = btn;
+
+        this._sidebarDragOffsetY = clientY - rect.top;
+      };
+
+      // Mouse
+      let mouseTimer = null;
+      btn.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        const startY = e.clientY;
+        let moved = false;
+
+        const onMove = (ev) => {
+          if (!this._sidebarDragId) {
+            if (Math.hypot(ev.clientX - e.clientX, ev.clientY - startY) > 5) {
+              clearTimeout(mouseTimer);
+              cleanup();
+            }
+            return;
+          }
+          this._updateSidebarGhost(ev.clientY);
+        };
+        const onUp = () => {
+          clearTimeout(mouseTimer);
+          cleanup();
+          if (this._sidebarDragId) {
+            this._sidebarDragJustEnded = true;
+            this._endSidebarDrag();
+          }
+        };
+        const cleanup = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+
+        mouseTimer = setTimeout(() => startDrag(startY), 400);
+      });
+
+      // Touch
+      let touchTimer = null;
+      let touchStartY = 0;
+      btn.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY;
+        touchTimer = setTimeout(() => {
+          e.preventDefault();
+          startDrag(touchStartY);
+        }, 400);
+      }, { passive: false });
+      btn.addEventListener('touchmove', (e) => {
+        if (this._sidebarDragId) {
+          e.preventDefault();
+          this._updateSidebarGhost(e.touches[0].clientY);
+        } else if (Math.abs(e.touches[0].clientY - touchStartY) > 5) {
+          clearTimeout(touchTimer);
+        }
+      }, { passive: false });
+      btn.addEventListener('touchend', () => {
+        clearTimeout(touchTimer);
+        if (this._sidebarDragId) {
+          this._sidebarDragJustEnded = true;
+          this._endSidebarDrag();
+        }
+      });
     });
 
     // Dropdown (Mobile Header) – nur relevant wenn mehrere Listen vorhanden
@@ -2691,6 +2963,182 @@ class TodoListPanel extends HTMLElement {
     });
   }
 
+  _updateSidebarGhost(clientY) {
+    if (!this._sidebarGhost) return;
+    this._sidebarGhost.style.top = (clientY - this._sidebarDragOffsetY) + 'px';
+
+    // Placeholder verschieben
+    const sidebar = this.shadowRoot.getElementById('sidebar');
+    const items = [...sidebar.querySelectorAll('.sidebar-item')];    const ghostMid = clientY;
+    let targetIdx = items.length;
+    for (let i = 0; i < items.length; i++) {
+      const r = items[i].getBoundingClientRect();
+      if (ghostMid < r.top + r.height / 2) { targetIdx = i; break; }
+    }
+    const ph = this._sidebarPh;
+    if (!ph) return;
+    if (targetIdx >= items.length) {
+      sidebar.appendChild(ph);
+    } else {
+      sidebar.insertBefore(ph, items[targetIdx]);
+    }
+    this._sidebarTargetIdx = targetIdx;
+  }
+
+  _endSidebarDrag() {
+    if (!this._sidebarDragId) return;
+    const dragId = this._sidebarDragId;
+
+    // Cleanup
+    if (this._sidebarGhost) { this._sidebarGhost.remove(); this._sidebarGhost = null; }
+    if (this._sidebarPh) { this._sidebarPh.remove(); this._sidebarPh = null; }
+    this._sidebarDragBtn = null;
+    this._sidebarDragId = null;
+
+    // Neue Reihenfolge berechnen
+    const sidebar = this.shadowRoot.getElementById('sidebar');
+    const buttons = [...sidebar.querySelectorAll('.sidebar-item')];
+    const currentOrder = buttons.map(b => b.dataset.id);
+
+    // Drag-Item aus alter Position entfernen und an neuer einfügen
+    const oldIdx = this._lists.findIndex(l => l.id === dragId);
+    let newIdx = this._sidebarTargetIdx ?? oldIdx;
+    if (oldIdx === -1) return;
+
+    const newOrder = this._lists.map(l => l.id).filter(id => id !== dragId);
+    // targetIdx bezieht sich auf sichtbare Items (ohne das versteckte Original)
+    // also ist es bereits die korrekte Einfügeposition im gefilterten Array
+    newOrder.splice(Math.min(newIdx, newOrder.length), 0, dragId);
+
+    // Speichern und Sidebar neu rendern
+    localStorage.setItem('todo_list_order', JSON.stringify(newOrder));
+    // _lists neu sortieren
+    this._lists.sort((a, b) => {
+      const ai = newOrder.indexOf(a.id);
+      const bi = newOrder.indexOf(b.id);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+    this._renderSidebar();
+  }
+
+  async _doSidebarSearch(query) {
+    const mainArea = this.shadowRoot.querySelector('.main-area .content');
+    const todoList = this.shadowRoot.getElementById('todo-list');
+    const addRow = this.shadowRoot.querySelector('.add-row');
+    if (!mainArea) return;
+
+    if (!query || query.length < 2) {
+      // Suche beenden, normale Ansicht wiederherstellen
+      if (this._sidebarSearchActive) {
+        this._sidebarSearchActive = false;
+        if (addRow) addRow.style.display = '';
+        if (todoList) todoList.style.display = '';
+        const oldResults = this.shadowRoot.getElementById('sidebar-search-results');
+        if (oldResults) oldResults.remove();
+        // Header-Titel zurücksetzen
+        const titleEl = this.shadowRoot.getElementById('header-title-text');
+        const currentList = this._lists.find(l => l.id === this._selected);
+        if (titleEl) titleEl.textContent = currentList?.name ?? 'To Do';
+        this._renderList();
+      }
+      return;
+    }
+
+    // Items laden falls nötig
+    if (!this._searchAllItems || this._searchAllItems.length === 0) {
+      this._searchAllItems = [];
+      for (const list of this._lists) {
+        const items = await new Promise((resolve) => {
+          let done = false;
+          this._hass.connection.subscribeMessage(
+            (msg) => { if (!done && msg.items) { done = true; resolve(msg.items); } },
+            { type: 'todo/item/subscribe', entity_id: list.id }
+          ).then(unsub => { setTimeout(() => { if (!done) { done = true; resolve([]); } unsub(); }, 5000); });
+        });
+        for (const item of items) {
+          this._searchAllItems.push({ ...item, listId: list.id, listName: list.name });
+        }
+      }
+    }
+
+    const q = query.toLowerCase();
+    const matches = this._searchAllItems.filter(item =>
+      item.summary.toLowerCase().includes(q) ||
+      (item.description || '').toLowerCase().includes(q)
+    );
+
+    this._sidebarSearchActive = true;
+    if (addRow) addRow.style.display = 'none';
+    if (todoList) todoList.style.display = 'none';
+    // Header-Titel auf "Suche" setzen
+    const titleEl = this.shadowRoot.getElementById('header-title-text');
+    if (titleEl) titleEl.textContent = 'Suche';
+
+    let resultsEl = this.shadowRoot.getElementById('sidebar-search-results');
+    if (!resultsEl) {
+      resultsEl = document.createElement('div');
+      resultsEl.id = 'sidebar-search-results';
+      resultsEl.style.cssText = 'padding:0 0.5rem;overflow-y:auto;flex:1;';
+      mainArea.appendChild(resultsEl);
+    }
+
+    if (matches.length === 0) {
+      resultsEl.innerHTML = '<div style="padding:1.5rem 0.5rem;color:var(--secondary-text-color,#999);font-size:0.9rem;">Keine Ergebnisse.</div>';
+      return;
+    }
+
+    resultsEl.innerHTML = `<div style="padding:0.5rem 0.5rem 0.25rem;font-size:0.8rem;color:var(--secondary-text-color,#999);">${matches.length} Ergebnis${matches.length > 1 ? 'se' : ''}</div>
+      <ul class="todo-list" style="margin:0;padding:0;">` +
+      matches.slice(0, 50).map(item => `
+        <li class="swipe-wrapper search-result-li" data-uid="${item.uid}" data-list="${item.listId}">
+          <div class="todo-item">
+            <div class="check-circle ${item.status === 'completed' ? 'done' : ''}"></div>
+            <div class="todo-body">
+              <div class="todo-text ${item.status === 'completed' ? 'done' : ''}">${this._esc(item.summary)}</div>
+              <div class="todo-note-preview">${this._esc(item.listName)}</div>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </li>
+      `).join('') + '</ul>';
+
+    resultsEl.querySelectorAll('.search-result-li').forEach(el => {
+      el.addEventListener('click', () => {
+        const uid = el.dataset.uid;
+        const listId = el.dataset.list;
+        this._searchReturnToResults = true;
+
+        const item = this._searchAllItems.find(i => i.uid === uid && i.listId === listId);
+        if (item) {
+          this._detailTodo = item;
+          this._detailEditMode = false;
+          this._selected = listId;
+          this._showDetail();
+        }
+      });
+    });
+  }
+
+  async _createNewList() {
+    const result = await this._showDialog('Neue Liste', 'Name der Liste…', 'Erstellen');
+    if (!result?.name) return;
+    try {
+      const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
+        handler: 'local_todo',
+        show_advanced_options: false,
+      });
+      if (!step1?.flow_id) throw new Error('Kein flow_id erhalten');
+      this._waitingForNewList = new Set(this._lists.map(l => l.id));
+      this._pendingNewListIcon = result.icon;
+      await this._hass.callApi('POST', `config/config_entries/flow/${step1.flow_id}`, {
+        todo_list_name: result.name,
+      });
+    } catch(e) {
+      console.error('create list error', e);
+      alert('Fehler beim Erstellen: ' + (e?.message ?? JSON.stringify(e)));
+    }
+  }
+
   _selectList(id) {
     if (id === this._selected) return;
     this._selected = id;
@@ -2704,9 +3152,13 @@ class TodoListPanel extends HTMLElement {
     // Header-Titel + Sidebar aktualisieren
     const currentList = this._lists.find(l => l.id === this._selected);
     const titleEl = this.shadowRoot.getElementById('header-title-text');
-    if (titleEl) titleEl.textContent = currentList?.name ?? 'To Do';
+    if (titleEl && !this._sidebarSearchActive && !this._searchActive) {
+      titleEl.textContent = currentList?.name ?? 'To Do';
+    }
     const titleIcon = this.shadowRoot.getElementById('header-title-icon');
-    if (titleIcon) titleIcon.setAttribute('icon', currentList?.icon ?? 'mdi:clipboard-list');
+    if (titleIcon && !this._sidebarSearchActive && !this._searchActive) {
+      titleIcon.setAttribute('icon', currentList?.icon ?? 'mdi:clipboard-list');
+    }
 
     this._renderSidebar();
 
@@ -2722,6 +3174,9 @@ class TodoListPanel extends HTMLElement {
       ul.innerHTML = '<li class="empty">Keine To-Dos</li>';
       return;
     }
+
+    // Marker für ersten erledigten Block
+    const firstCompleted = this._todos.find(t => t.status === 'completed');
 
     // ── Keyed Reconciliation: kein kompletter DOM-Neuaufbau ──────────────
     // Bestehende <li> nach uid indexieren
@@ -2768,6 +3223,65 @@ class TodoListPanel extends HTMLElement {
         if (refNode.nextSibling !== li) refNode.after(li);
       }
       refNode = li;
+    }
+
+    // Abschnittslabel "Erledigt" nur einblenden, wenn erledigte To-Dos vorhanden sind
+    const oldLabel = ul.querySelector('li.completed-section-label');
+    if (oldLabel) oldLabel.remove();
+
+    if (firstCompleted) {
+      const firstCompletedLi = ul.querySelector(`li.swipe-wrapper[data-uid="${firstCompleted.uid}"]`);
+      if (firstCompletedLi) {
+        const label = document.createElement('li');
+        label.className = 'completed-section-label';
+        const title = document.createElement('span');
+        title.className = 'completed-section-title';
+        title.textContent = 'Erledigt';
+
+        const deleteBtn = document.createElement('ha-icon-button');
+        deleteBtn.className = 'completed-section-delete';
+        deleteBtn.setAttribute('label', 'Erledigte To-Dos löschen');
+        deleteBtn.innerHTML = '<ha-icon icon="mdi:trash-can-outline"></ha-icon>';
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await this._deleteCompletedTodos();
+        });
+
+        label.appendChild(title);
+        label.appendChild(deleteBtn);
+        ul.insertBefore(label, firstCompletedLi);
+      }
+    }
+  }
+
+  async _deleteCompletedTodos() {
+    if (!this._isOnline()) return;
+
+    const completed = this._todos.filter(t => t.status === 'completed');
+    if (completed.length === 0) return;
+
+    const confirmed = await this._showConfirm(
+      'Erledigte To-Dos löschen',
+      `Willst du wirklich ${completed.length} erledigte To-Do${completed.length > 1 ? 's' : ''} löschen?`,
+      'Löschen'
+    );
+    if (!confirmed) return;
+
+    const backup = [...this._todos];
+    this._todos = this._todos.filter(t => t.status !== 'completed');
+    this._renderList();
+
+    try {
+      for (const todo of completed) {
+        await this._callWithTimeout(
+          this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
+        );
+      }
+    } catch (e) {
+      console.warn('_deleteCompletedTodos failed/timeout:', e);
+      this._todos = backup;
+      this._renderList();
+      this._subscribeItems();
     }
   }
 
@@ -2917,6 +3431,107 @@ class TodoListPanel extends HTMLElement {
       }
       reorderEl.style.display = '';
 
+      // Ghost-basiertes Drag & Drop
+      let ghost = null, ph = null, dragLi = null, dragIdx = null, offsetY = 0;
+
+      const bindDragHandlers = () => {
+        reorderEl.querySelectorAll('.reorder-item').forEach(li => {
+          const handle = li.querySelector('.reorder-handle');
+
+          const startDrag = (clientY) => {
+            dragIdx = parseInt(li.dataset.idx);
+            if (navigator.vibrate) navigator.vibrate(40);
+            const rect = li.getBoundingClientRect();
+
+            ghost = li.cloneNode(true);
+            ghost.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;height:${rect.height}px;margin:0;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15);opacity:0.95;transition:none;pointer-events:none;list-style:none;border-radius:10px;background:var(--card-background-color,#fff);display:flex;align-items:center;padding:0.7rem 0.8rem;gap:0.75rem;`;
+            overlay.appendChild(ghost);
+
+            ph = document.createElement('li');
+            ph.className = 'reorder-placeholder';
+            ph.style.height = rect.height + 'px';
+            li.replaceWith(ph);
+            dragLi = li;
+            offsetY = clientY - rect.top;
+          };
+
+          const moveGhost = (clientY) => {
+            if (!ghost) return;
+            ghost.style.top = (clientY - offsetY) + 'px';
+
+            // Alle sichtbaren Items (ohne Placeholder) für Positionsbestimmung
+            const siblings = [...reorderEl.children].filter(el => el !== ph);
+            let inserted = false;
+            for (const sib of siblings) {
+              const r = sib.getBoundingClientRect();
+              if (clientY < r.top + r.height / 2) {
+                reorderEl.insertBefore(ph, sib);
+                inserted = true;
+                break;
+              }
+            }
+            if (!inserted) {
+              reorderEl.appendChild(ph);
+            }
+          };
+
+          const endDrag = () => {
+            if (!ghost) return;
+            ghost.remove(); ghost = null;
+            dragLi = null;
+
+            // Neue Reihenfolge aus DOM-Position ableiten
+            const children = [...reorderEl.children];
+            const phIdx = children.indexOf(ph);
+            if (ph) { ph.remove(); ph = null; }
+
+            if (dragIdx !== null && phIdx !== -1) {
+              const [moved] = orderedLists.splice(dragIdx, 1);
+              orderedLists.splice(phIdx, 0, moved);
+              renderList();
+            }
+            dragIdx = null;
+          };
+
+          // Touch events
+          let touchTimer = null;
+          handle.addEventListener('touchstart', (e) => {
+            const startY = e.touches[0].clientY;
+            touchTimer = setTimeout(() => {
+              e.preventDefault();
+              startDrag(startY);
+            }, 300);
+          }, { passive: false });
+          li.addEventListener('touchmove', (e) => {
+            if (ghost) {
+              e.preventDefault();
+              moveGhost(e.touches[0].clientY);
+            } else {
+              clearTimeout(touchTimer);
+            }
+          }, { passive: false });
+          li.addEventListener('touchend', () => {
+            clearTimeout(touchTimer);
+            endDrag();
+          });
+
+          // Mouse events
+          handle.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            startDrag(e.clientY);
+            const onMove = (ev) => moveGhost(ev.clientY);
+            const onUp = () => {
+              document.removeEventListener('mousemove', onMove);
+              document.removeEventListener('mouseup', onUp);
+              endDrag();
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+          });
+        });
+      };
+
       const renderList = () => {
         reorderEl.innerHTML = orderedLists.map((l, i) => `
           <li class="reorder-item" data-idx="${i}" data-id="${l.id}">
@@ -2927,57 +3542,9 @@ class TodoListPanel extends HTMLElement {
             </span>
           </li>
         `).join('');
+        bindDragHandlers();
       };
       renderList();
-
-      // Drag reorder within the list
-      let dragIdx = null;
-      const onPointerDown = (e) => {
-        const handle = e.target.closest('.reorder-handle');
-        if (!handle) return;
-        const li = handle.closest('.reorder-item');
-        dragIdx = parseInt(li.dataset.idx);
-        li.classList.add('dragging');
-        e.preventDefault();
-      };
-      const onPointerMove = (e) => {
-        if (dragIdx === null) return;
-        const items = [...reorderEl.querySelectorAll('.reorder-item')];
-        const y = e.clientY || (e.touches?.[0]?.clientY);
-        for (let i = 0; i < items.length; i++) {
-          if (i === dragIdx) continue;
-          const rect = items[i].getBoundingClientRect();
-          const mid = rect.top + rect.height / 2;
-          if (i < dragIdx && y < mid) {
-            // Move up
-            const [moved] = orderedLists.splice(dragIdx, 1);
-            orderedLists.splice(i, 0, moved);
-            dragIdx = i;
-            renderList();
-            reorderEl.querySelectorAll('.reorder-item')[dragIdx]?.classList.add('dragging');
-            return;
-          }
-          if (i > dragIdx && y > mid) {
-            // Move down
-            const [moved] = orderedLists.splice(dragIdx, 1);
-            orderedLists.splice(i, 0, moved);
-            dragIdx = i;
-            renderList();
-            reorderEl.querySelectorAll('.reorder-item')[dragIdx]?.classList.add('dragging');
-            return;
-          }
-        }
-      };
-      const onPointerUp = () => {
-        if (dragIdx !== null) {
-          reorderEl.querySelectorAll('.reorder-item')[dragIdx]?.classList.remove('dragging');
-          dragIdx = null;
-        }
-      };
-
-      reorderEl.addEventListener('pointerdown', onPointerDown);
-      document.addEventListener('pointermove', onPointerMove);
-      document.addEventListener('pointerup', onPointerUp);
 
       overlay.classList.add('open');
 
@@ -2985,12 +3552,6 @@ class TodoListPanel extends HTMLElement {
         overlay.classList.remove('open');
         input.style.display = '';
         reorderEl.style.display = 'none';
-        confirmBtn.removeEventListener('click', onConfirm);
-        cancelBtn.removeEventListener('click', onCancel);
-        overlay.removeEventListener('click', onOverlay);
-        reorderEl.removeEventListener('pointerdown', onPointerDown);
-        document.removeEventListener('pointermove', onPointerMove);
-        document.removeEventListener('pointerup', onPointerUp);
       };
       const onConfirm = () => {
         const newOrder = orderedLists.map(l => l.id);
@@ -2999,10 +3560,19 @@ class TodoListPanel extends HTMLElement {
         this._renderSidebar();
         this._renderList();
         cleanup();
+        confirmBtn.removeEventListener('click', onConfirm);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlay);
         resolve(true);
       };
-      const onCancel = () => { cleanup(); resolve(false); };
-      const onOverlay = (e) => { if (e.target === overlay) { cleanup(); resolve(false); } };
+      const onCancel = () => {
+        cleanup();
+        confirmBtn.removeEventListener('click', onConfirm);
+        cancelBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlay);
+        resolve(false);
+      };
+      const onOverlay = (e) => { if (e.target === overlay) onCancel(); };
 
       confirmBtn.addEventListener('click', onConfirm);
       cancelBtn.addEventListener('click', onCancel);
