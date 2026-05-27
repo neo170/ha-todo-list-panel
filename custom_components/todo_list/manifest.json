@@ -1,7 +1,7 @@
 ﻿{
     "domain":  "todo_list",
     "name":  "Todo List Panel",
-    "version":  "1.0.3",
+    "version":  "1.0.4",
     "documentation":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel",
     "issue_tracker":  "https://github.com/YOUR_GITHUB_USER/ha-todo-list-panel/issues",
     "requirements":  [
