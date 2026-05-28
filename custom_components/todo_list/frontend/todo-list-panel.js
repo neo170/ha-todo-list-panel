@@ -1,4 +1,4 @@
-﻿const PANEL_VERSION = '1.0.23';
+const PANEL_VERSION = '1.0.24';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
