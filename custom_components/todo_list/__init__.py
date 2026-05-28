@@ -24,18 +24,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
     if hass.data.get(REGISTERED_KEY):
         return
 
-    integration_dir = Path(__file__).parent
-
-    # Statischen Pfad registrieren: JS direkt aus Integration-Verzeichnis servieren
-    # Kein www/-Kopieren noetig, funktioniert auf jedem Server nach der Installation
-    hass.http.register_static_path(
-        STATIC_PATH,
-        str(integration_dir),
-        cache_headers=False,
-    )
-
-    # Version aus manifest.json lesen fuer Cache-Busting
-    manifest_path = integration_dir / "manifest.json"
+    manifest_path = Path(__file__).parent / "manifest.json"
     version = await hass.async_add_executor_job(_read_manifest_version, manifest_path)
 
     frontend.async_register_built_in_panel(
