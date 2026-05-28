@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -59,11 +60,9 @@ async def _register_panel(hass: HomeAssistant) -> None:
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     # Static path hier registrieren: http-Komponente ist zu diesem Zeitpunkt garantiert bereit
-    hass.http.register_static_path(
-        STATIC_PATH,
-        str(Path(__file__).parent),
-        cache_headers=False,
-    )
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(STATIC_PATH, str(Path(__file__).parent), False),
+    ])
     if DOMAIN in config:
         await _register_panel(hass)
     return True
