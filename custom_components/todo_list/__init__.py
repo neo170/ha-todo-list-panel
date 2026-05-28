@@ -13,14 +13,18 @@ DOMAIN = "todo_list"
 REGISTERED_KEY = f"{DOMAIN}_panel_registered"
 
 
+def _read_manifest_version(manifest_path: Path) -> str:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return manifest.get("version", "0.0.0")
+
+
 async def _register_panel(hass: HomeAssistant) -> None:
     if hass.data.get(REGISTERED_KEY):
         return
 
     # Version aus manifest.json lesen fuer Cache-Busting
     manifest_path = Path(__file__).parent / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    version = manifest.get("version", "0.0.0")
+    version = await hass.async_add_executor_job(_read_manifest_version, manifest_path)
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
     frontend.async_register_built_in_panel(
