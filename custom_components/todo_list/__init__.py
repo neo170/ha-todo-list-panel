@@ -5,6 +5,7 @@
 import json
 from pathlib import Path
 
+from homeassistant.components import frontend
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -41,7 +42,8 @@ async def _register_panel(hass: HomeAssistant) -> None:
         raise RuntimeError("No supported static path registration API found")
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
-    hass.components.frontend.async_register_built_in_panel(
+    frontend.async_register_built_in_panel(
+        hass,
         component_name="custom",
         sidebar_title="To-Do Liste",
         sidebar_icon="mdi:checkbox-marked-outline",
