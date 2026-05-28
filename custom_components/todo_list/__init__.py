@@ -5,6 +5,8 @@
 import json
 from pathlib import Path
 
+from homeassistant.components.http import StaticPathConfig
+
 DOMAIN = "todo_list"
 PANEL_URL = "/todo_list_panel/frontend"
 
@@ -17,7 +19,12 @@ async def async_setup(hass, config):
 
     # JS-Datei aus dem Integration-Verzeichnis ausliefern
     frontend_path = str(Path(__file__).parent / "frontend")
-    hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
+    if hasattr(hass.http, "async_register_static_paths"):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(PANEL_URL, frontend_path, cache_headers=False)]
+        )
+    else:
+        hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
     hass.components.frontend.async_register_built_in_panel(
