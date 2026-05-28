@@ -58,6 +58,12 @@ async def _register_panel(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    # Static path hier registrieren: http-Komponente ist zu diesem Zeitpunkt garantiert bereit
+    hass.http.register_static_path(
+        STATIC_PATH,
+        str(Path(__file__).parent),
+        cache_headers=False,
+    )
     if DOMAIN in config:
         await _register_panel(hass)
     return True
