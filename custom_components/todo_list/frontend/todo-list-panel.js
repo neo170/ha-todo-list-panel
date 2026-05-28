@@ -1,3 +1,5 @@
+const PANEL_VERSION = new URL(import.meta.url).searchParams.get('v') || 'dev';
+
 class TodoListPanel extends HTMLElement {
   constructor() {
     super();
@@ -2450,7 +2452,7 @@ class TodoListPanel extends HTMLElement {
           <ha-icon-button id="menu-btn" label="Menü">
             <ha-icon icon="mdi:menu"></ha-icon>
           </ha-icon-button>
-          <span class="app-title">To-Do</span>
+          <span class="app-title">To-Do (${PANEL_VERSION})</span>
           <div class="topbar-title">
             <div class="list-picker-wrap" id="list-picker-wrap">
               <button class="header-title-btn" id="header-title-btn">

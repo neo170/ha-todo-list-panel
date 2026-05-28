@@ -30,7 +30,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
-        sidebar_title="To-Do Liste",
+        sidebar_title="To-Do",
         sidebar_icon="mdi:checkbox-marked-outline",
         frontend_url_path="todo-panel",
         config={
