@@ -6,12 +6,18 @@ import json
 from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 DOMAIN = "todo_list"
 PANEL_URL = "/todo_list_panel/frontend"
+REGISTERED_KEY = f"{DOMAIN}_panel_registered"
 
 
-async def async_setup(hass, config):
+async def _register_panel(hass: HomeAssistant) -> None:
+    if hass.data.get(REGISTERED_KEY):
+        return
+
     # Version aus manifest.json lesen fuer Cache-Busting
     manifest_path = Path(__file__).parent / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -42,5 +48,24 @@ async def async_setup(hass, config):
         },
         require_admin=False,
     )
+
+    hass.data[REGISTERED_KEY] = True
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    # YAML-Fallback fuer bestehende Installationen
+    if DOMAIN in config:
+        await _register_panel(hass)
+
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    await _register_panel(hass)
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Das Panel bleibt bis zum Neustart registriert.
     return True
 
