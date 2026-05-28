@@ -3,6 +3,7 @@
 # Die Todo-Daten kommen direkt von der offiziellen HA todo-Domain.
 
 import json
+import shutil
 from pathlib import Path
 
 from homeassistant.components import frontend
@@ -16,6 +17,20 @@ REGISTERED_KEY = f"{DOMAIN}_panel_registered"
 def _read_manifest_version(manifest_path: Path) -> str:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     return manifest.get("version", "0.0.0")
+
+
+def _ensure_panel_file_sync(hass: HomeAssistant) -> None:
+    """Kopiere Panel-JS zu www/ wenn nicht vorhanden (wird von async_add_executor_job aufgerufen)."""
+    src = Path(__file__).parent / "todo-list-panel.js"
+    dest = hass.config.path("www", "todo_list", "todo-list-panel.js")
+    dest_path = Path(dest)
+    
+    # Verzeichnis erstellen wenn nötig
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Datei kopieren wenn Quelle vorhanden und Ziel nicht
+    if src.exists() and not dest_path.exists():
+        shutil.copy2(str(src), str(dest))
 
 
 async def _register_panel(hass: HomeAssistant) -> None:
@@ -36,7 +51,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "todo-list-panel",
-                "module_url": f"/local/todo_list_panel/todo-list-panel.js?v={version}",
+                "module_url": f"/local/todo_list/todo-list-panel.js?v={version}",
                 "embed_iframe": False,
                 "trust_external_script": True,
             }
@@ -56,6 +71,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Panel-Datei zu www/ kopieren wenn nicht vorhanden
+    await hass.async_add_executor_job(_ensure_panel_file_sync, hass)
     await _register_panel(hass)
     return True
 
