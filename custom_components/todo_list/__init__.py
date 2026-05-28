@@ -5,7 +5,6 @@
 import json
 from pathlib import Path
 
-from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -25,12 +24,21 @@ async def _register_panel(hass: HomeAssistant) -> None:
 
     # JS-Datei aus dem Integration-Verzeichnis ausliefern
     frontend_path = str(Path(__file__).parent / "frontend")
-    if hasattr(hass.http, "async_register_static_paths"):
+    # Maximal kompatibel: zuerst legacy API, dann async API als Fallback.
+    if hasattr(hass.http, "register_static_path"):
+        hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
+    elif hasattr(hass.http, "async_register_static_paths"):
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(PANEL_URL, frontend_path, cache_headers=False)]
+            [
+                {
+                    "url_path": PANEL_URL,
+                    "path": frontend_path,
+                    "cache_headers": False,
+                }
+            ]
         )
     else:
-        hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
+        raise RuntimeError("No supported static path registration API found")
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
     hass.components.frontend.async_register_built_in_panel(
