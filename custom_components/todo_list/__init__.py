@@ -1,21 +1,17 @@
 # Home Assistant Custom Integration: Todo List Panel
-# Dieses Modul registriert das Custom Panel im HA-Frontend.
+# Dieses Modul registriert nur das Custom Panel im HA-Frontend.
 # Die Todo-Daten kommen direkt von der offiziellen HA todo-Domain.
 
 import json
 from pathlib import Path
 
-from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 DOMAIN = "todo_list"
+PANEL_URL = "/todo_list_panel/frontend"
 REGISTERED_KEY = f"{DOMAIN}_panel_registered"
-
-
-def _read_manifest_version(manifest_path: Path) -> str:
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    return manifest.get("version", "0.0.0")
 
 
 async def _register_panel(hass: HomeAssistant) -> None:
@@ -24,11 +20,20 @@ async def _register_panel(hass: HomeAssistant) -> None:
 
     # Version aus manifest.json lesen fuer Cache-Busting
     manifest_path = Path(__file__).parent / "manifest.json"
-    version = await hass.async_add_executor_job(_read_manifest_version, manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    version = manifest.get("version", "0.0.0")
+
+    # JS-Datei aus dem Integration-Verzeichnis ausliefern
+    frontend_path = str(Path(__file__).parent / "frontend")
+    if hasattr(hass.http, "async_register_static_paths"):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(PANEL_URL, frontend_path, cache_headers=False)]
+        )
+    else:
+        hass.http.register_static_path(PANEL_URL, frontend_path, cache_headers=False)
 
     # Panel registrieren: zeigt todo-list-panel.js als Sidebar-Eintrag
-    frontend.async_register_built_in_panel(
-        hass,
+    hass.components.frontend.async_register_built_in_panel(
         component_name="custom",
         sidebar_title="To-Do Liste",
         sidebar_icon="mdi:checkbox-marked-outline",
@@ -36,7 +41,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "todo-list-panel",
-                "module_url": f"/local/todo_list_panel/todo-list-panel.js?v={version}",
+                "module_url": f"{PANEL_URL}/todo-list-panel.js?v={version}",
                 "embed_iframe": False,
                 "trust_external_script": True,
             }
