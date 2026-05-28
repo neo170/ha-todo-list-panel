@@ -30,7 +30,7 @@ class TodoListPanel extends HTMLElement {
     this._dragTargetIdx   = -1;
   }
 
-  // â”€â”€ HASS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── HASS ─────────────────────────────────────────────────
 
   set hass(hass) {
     const prev = this._hass;
@@ -57,7 +57,7 @@ class TodoListPanel extends HTMLElement {
     }
     this._lists = lists;
 
-    // Neue Liste erkannt? â†’ Sidebar aktualisieren + auswÃ¤hlen
+    // Neue Liste erkannt? → Sidebar aktualisieren + auswählen
     if (this._waitingForNewList) {
       const newEntity = lists.find(l => !this._waitingForNewList.has(l.id));
       if (newEntity) {
@@ -85,7 +85,7 @@ class TodoListPanel extends HTMLElement {
       return;
     }
 
-    // Sidebar bei Listenumbenennungen o.Ã¤. aktualisieren (nur wenn sich was geÃ¤ndert hat)
+    // Sidebar bei Listenumbenennungen o.ä. aktualisieren (nur wenn sich was geändert hat)
     if (this._domReady) {
       const sidebarKey = lists.map(l => `${l.id}|${l.name}|${l.icon}|${hass.states[l.id]?.attributes?.items_not_completed ?? 0}`).join(';');
       if (sidebarKey !== this._lastSidebarKey) {
@@ -106,18 +106,18 @@ class TodoListPanel extends HTMLElement {
     // Nach App-Resume (iOS Lockscreen, Tab-Wechsel): Subscription neu aufbauen
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this._selected) {
-        // Subscription ist nach dem Sleep wahrscheinlich tot â†’ neu starten
+        // Subscription ist nach dem Sleep wahrscheinlich tot → neu starten
         this._subscribeItems();
       }
     });
   }
 
-  // PrÃ¼ft ob wir online sind. Blockiert Aktionen wenn nicht.
+  // Prüft ob wir online sind. Blockiert Aktionen wenn nicht.
   _isOnline() {
     return !!this._hass?.connection;
   }
 
-  // Wrapper fÃ¼r Service-Calls mit Timeout (verhindert ewiges HÃ¤ngen bei schlechter Verbindung)
+  // Wrapper für Service-Calls mit Timeout (verhindert ewiges Hängen bei schlechter Verbindung)
   _callWithTimeout(promise, ms = 5000) {
     return Promise.race([
       promise,
@@ -125,10 +125,10 @@ class TodoListPanel extends HTMLElement {
     ]);
   }
 
-  // â”€â”€ API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── API ──────────────────────────────────────────────────
 
-  // Baut die WS-Subscription fÃ¼r die gewÃ¤hlte Liste auf.
-  // Wird bei Listenwechsel neu gestartet. Liefert Push-Updates auf allen GerÃ¤ten.
+  // Baut die WS-Subscription für die gewählte Liste auf.
+  // Wird bei Listenwechsel neu gestartet. Liefert Push-Updates auf allen Geräten.
   _subscribeItems() {
     // Alte Subscription beenden
     if (this._unsubItems) {
@@ -159,7 +159,7 @@ class TodoListPanel extends HTMLElement {
 
         // KEYED RECONCILIATION: Wir verarbeiten das Update nur,
         // wenn es sich wirklich von unserem Stand unterscheidet,
-        // um Flackern und RÃ¼cksprÃ¼nge zu vermeiden.
+        // um Flackern und Rücksprünge zu vermeiden.
         const newUids = [...active, ...completed].map(t => t.uid).join(',');
         const oldUids = this._todos.map(t => t.uid).join(',');
 
@@ -182,7 +182,7 @@ class TodoListPanel extends HTMLElement {
     });
   }
 
-  // Einmaliger Fetch â€“ weiterhin genutzt von _addTodo (fÃ¼r move-to-top nach add)
+  // Einmaliger Fetch – weiterhin genutzt von _addTodo (für move-to-top nach add)
   async _fetchItems() {
     if (!this._selected || !this._hass) return;
     try {
@@ -218,7 +218,7 @@ class TodoListPanel extends HTMLElement {
         this._hass.callService('todo', 'add_item', { entity_id: this._selected, item: text })
       );
 
-      // 2. Einmaliges Verschieben nach oben (fÃ¼r Google Tasks etc. brauchen wir die UID)
+      // 2. Einmaliges Verschieben nach oben (für Google Tasks etc. brauchen wir die UID)
       const result = await this._callWithTimeout(
         this._hass.callWS({
           type: 'call_service',
@@ -267,7 +267,7 @@ class TodoListPanel extends HTMLElement {
 
   async _deleteTodo(uid) {
     if (!this._isOnline()) return;
-    // Item merken falls wir es wiederherstellen mÃ¼ssen
+    // Item merken falls wir es wiederherstellen müssen
     const backup = [...this._todos];
     // Optimistisch: Sofort aus UI entfernen
     this._todos = this._todos.filter(t => t.uid !== uid);
@@ -278,7 +278,7 @@ class TodoListPanel extends HTMLElement {
       );
     } catch (e) {
       console.warn('_deleteTodo failed/timeout:', e);
-      // LÃ¶schen hat nicht geklappt â†’ alten Stand wiederherstellen
+      // Löschen hat nicht geklappt → alten Stand wiederherstellen
       this._todos = backup;
       this._renderList();
     }
@@ -311,7 +311,7 @@ class TodoListPanel extends HTMLElement {
       duePayload = { due_date: null };
     }
 
-    // Optimistisch: lokalen State sofort updaten & zurÃ¼ck zu Readonly
+    // Optimistisch: lokalen State sofort updaten & zurück zu Readonly
     const newDue = dateVal
       ? (timeVal ? `${dateVal}T${timeVal}:00` : dateVal)
       : null;
@@ -320,7 +320,7 @@ class TodoListPanel extends HTMLElement {
         ? { ...t, summary: newTitle, description: newNotes, due: newDue }
         : t
     );
-    // Detailtodo aktualisieren fÃ¼r Readonly-Ansicht
+    // Detailtodo aktualisieren für Readonly-Ansicht
     this._detailTodo = { ...todo, summary: newTitle, description: newNotes, due: newDue };
     this._detailEditMode = false;
     if (closeAfter) { this._closeDetail(); } else { this._renderDetailMode(); }
@@ -364,7 +364,7 @@ class TodoListPanel extends HTMLElement {
     setTimeout(() => this._deleteTodo(uid), 280);
   }
 
-  // â”€â”€ Detail-Ansicht â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Detail-Ansicht ───────────────────────────────────────
 
   _openDetail(uid) {
     if (!this._isOnline()) return;
@@ -413,7 +413,7 @@ class TodoListPanel extends HTMLElement {
     panel.querySelector('.detail-editform').style.display = edit ? '' : 'none';
 
     if (edit) {
-      // Edit-Felder befÃ¼llen
+      // Edit-Felder befüllen
       this.shadowRoot.getElementById('detail-title').value = todo.summary ?? '';
       this.shadowRoot.getElementById('detail-notes').value = todo.description ?? '';
       const dueDate = this.shadowRoot.getElementById('detail-due-date');
@@ -453,7 +453,7 @@ class TodoListPanel extends HTMLElement {
         }
       }
     } else {
-      // Readonly View befÃ¼llen
+      // Readonly View befüllen
       this.shadowRoot.getElementById('view-title').textContent = todo.summary ?? '';
 
       // Notizen mit klickbaren Links
@@ -465,7 +465,7 @@ class TodoListPanel extends HTMLElement {
         viewNotes.parentElement.style.display = 'none';
       }
 
-      // FÃ¤lligkeitsdatum
+      // Fälligkeitsdatum
       const viewDue = this.shadowRoot.getElementById('view-due');
       if (todo.due) {
         const hasTime = todo.due.includes('T');
@@ -509,7 +509,7 @@ class TodoListPanel extends HTMLElement {
     );
   }
 
-  // â”€â”€ Suche Ã¼ber alle Listen (Mobile: Inline im Mainbereich) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Suche über alle Listen (Mobile: Inline im Mainbereich) ──────────────────────────────
   _showSearch() {
     this._searchActive = true;
     this._searchOriginalList = this._selected;
@@ -520,7 +520,7 @@ class TodoListPanel extends HTMLElement {
     const titleIcon = this.shadowRoot.getElementById('header-title-icon');
     if (titleIcon) titleIcon.setAttribute('icon', 'mdi:magnify');
 
-    // Header-Buttons: Such-Icon + MenÃ¼ ausblenden, X-Button zeigen
+    // Header-Buttons: Such-Icon + Menü ausblenden, X-Button zeigen
     const searchBtn = this.shadowRoot.getElementById('search-btn');
     const menuWrap = this.shadowRoot.querySelector('.main-menu-wrap');
     const titleBtn = this.shadowRoot.getElementById('header-title-btn');
@@ -568,7 +568,7 @@ class TodoListPanel extends HTMLElement {
         <button id="mobile-search-clear" style="
           position:absolute;right:8px;top:50%;transform:translateY(-50%);
           border:none;background:none;font-size:1.1rem;cursor:pointer;
-          color:var(--secondary-text-color,#999);padding:0.2rem;display:none;">âœ•</button>
+          color:var(--secondary-text-color,#999);padding:0.2rem;display:none;">✕</button>
       </div>
       <div id="mobile-search-results" style="flex:1;overflow-y:auto;"></div>
     `;
@@ -604,12 +604,12 @@ class TodoListPanel extends HTMLElement {
 
   async _doSearch(query, resultsEl) {
     if (!query || query.length < 2) {
-      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Mindestens 2 Zeichen eingebenâ€¦</div>';
+      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Mindestens 2 Zeichen eingeben…</div>';
       return;
     }
 
     if (!this._searchAllItems || this._searchAllItems.length === 0) {
-      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Ladeâ€¦</div>';
+      resultsEl.innerHTML = '<div style="padding:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#999);">Lade…</div>';
       this._searchAllItems = [];
       for (const list of this._lists) {
         const items = await new Promise((resolve) => {
@@ -646,7 +646,7 @@ class TodoListPanel extends HTMLElement {
               <div class="todo-text ${item.status === 'completed' ? 'done' : ''}">${this._esc(item.summary)}</div>
               <div class="todo-note-preview">${this._esc(item.listName)}</div>
             </div>
-            <span class="chevron">â€º</span>
+            <span class="chevron">›</span>
           </div>
         </li>
       `).join('') + '</ul>';
@@ -677,7 +677,7 @@ class TodoListPanel extends HTMLElement {
     const todoList = this.shadowRoot.getElementById('todo-list');
     if (addRow) addRow.style.display = '';
     if (todoList) todoList.style.display = '';
-    // Liste aktualisieren: zurÃ¼ck zur ursprÃ¼nglichen Liste
+    // Liste aktualisieren: zurück zur ursprünglichen Liste
     if (this._searchOriginalList) {
       this._selected = this._searchOriginalList;
       this._searchOriginalList = null;
@@ -703,7 +703,7 @@ class TodoListPanel extends HTMLElement {
     if (titleIcon) titleIcon.setAttribute('icon', currentList?.icon ?? 'mdi:clipboard-list');
   }
 
-  // â”€â”€ Export / Import Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Export / Import Dialog ──────────────────────────────
   async _showExportImportDialog() {
     const overlay = this.shadowRoot.getElementById('dialog-overlay');
     const box = this.shadowRoot.getElementById('dialog-box');
@@ -719,7 +719,7 @@ class TodoListPanel extends HTMLElement {
       </div>
       <div id="ei-export-view">
         <p style="font-size:0.85rem;color:var(--secondary-text-color,#666);margin:0 0 0.75rem;">
-          Exportiert alle Listen mit allen EintrÃ¤gen als JSON.
+          Exportiert alle Listen mit allen Einträgen als JSON.
         </p>
         <button id="ei-export-btn" style="
           width:100%;padding:0.7rem;border:none;border-radius:8px;
@@ -730,7 +730,7 @@ class TodoListPanel extends HTMLElement {
       </div>
       <div id="ei-import-view" style="display:none;">
         <p style="font-size:0.85rem;color:var(--secondary-text-color,#666);margin:0 0 0.75rem;">
-          Importiert Listen aus einer JSON-Datei. Fehlende Listen werden erstellt, vorhandene EintrÃ¤ge mit gleicher ID Ã¼berschrieben.
+          Importiert Listen aus einer JSON-Datei. Fehlende Listen werden erstellt, vorhandene Einträge mit gleicher ID überschrieben.
         </p>
         <input type="file" id="ei-import-file" accept=".json" style="margin-bottom:0.75rem;font-size:0.9rem;">
         <button id="ei-import-btn" style="
@@ -744,7 +744,7 @@ class TodoListPanel extends HTMLElement {
         margin-top:1rem;width:100%;padding:0.6rem;border:none;border-radius:8px;
         background:var(--secondary-background-color,#f5f5f5);color:var(--primary-text-color,#333);
         font-size:0.95rem;cursor:pointer;">
-        SchlieÃŸen
+        Schließen
       </button>
     `;
     overlay.classList.add('open');
@@ -769,11 +769,11 @@ class TodoListPanel extends HTMLElement {
     // Export
     box.querySelector('#ei-export-btn').addEventListener('click', async () => {
       const status = box.querySelector('#ei-export-status');
-      status.textContent = 'Exportiereâ€¦';
+      status.textContent = 'Exportiere…';
       try {
         const exportData = { version: 1, exported: new Date().toISOString(), lists: [] };
         for (const list of this._lists) {
-          status.textContent = `Lade "${list.name}"â€¦`;
+          status.textContent = `Lade "${list.name}"…`;
           const items = await new Promise((resolve) => {
             let done = false;
             this._hass.connection.subscribeMessage(
@@ -803,7 +803,7 @@ class TodoListPanel extends HTMLElement {
         a.download = `todo-backup-${new Date().toISOString().slice(0,10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        status.textContent = `âœ“ ${exportData.lists.length} Listen exportiert.`;
+        status.textContent = `✓ ${exportData.lists.length} Listen exportiert.`;
       } catch(e) {
         status.textContent = 'Fehler: ' + e.message;
       }
@@ -818,17 +818,17 @@ class TodoListPanel extends HTMLElement {
       const file = fileInput.files[0];
       if (!file) return;
       const status = box.querySelector('#ei-import-status');
-      status.textContent = 'Lese Dateiâ€¦';
+      status.textContent = 'Lese Datei…';
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-        if (!data.lists || !Array.isArray(data.lists)) throw new Error('UngÃ¼ltiges Format');
+        if (!data.lists || !Array.isArray(data.lists)) throw new Error('Ungültiges Format');
 
         // Stufe 1: Listen-Auswahl anzeigen
         const importView = box.querySelector('#ei-import-view');
         importView.innerHTML = `
           <p style="font-size:0.85rem;color:var(--secondary-text-color,#666);margin:0 0 0.75rem;">
-            ${data.lists.length} Listen gefunden. WÃ¤hle aus, welche importiert werden sollen:
+            ${data.lists.length} Listen gefunden. Wähle aus, welche importiert werden sollen:
           </p>
           <div id="ei-list-selection" style="max-height:40vh;overflow-y:auto;margin-bottom:0.75rem;">
             ${data.lists.map((l, i) => `
@@ -836,7 +836,7 @@ class TodoListPanel extends HTMLElement {
                 <input type="checkbox" checked data-idx="${i}" style="width:18px;height:18px;accent-color:var(--primary-color,#1976d2);">
                 <span style="flex:1;">
                   <strong>${this._esc(l.name)}</strong>
-                  <span style="font-size:0.8rem;color:var(--secondary-text-color,#999);margin-left:0.4rem;">${l.items?.length ?? 0} EintrÃ¤ge</span>
+                  <span style="font-size:0.8rem;color:var(--secondary-text-color,#999);margin-left:0.4rem;">${l.items?.length ?? 0} Einträge</span>
                 </span>
               </label>
             `).join('')}
@@ -848,7 +848,7 @@ class TodoListPanel extends HTMLElement {
           <button id="ei-start-import" style="
             width:100%;padding:0.7rem;border:none;border-radius:8px;
             background:var(--primary-color,#1976d2);color:#fff;font-size:0.95rem;cursor:pointer;">
-            AusgewÃ¤hlte importieren
+            Ausgewählte importieren
           </button>
           <div id="ei-import-status2" style="margin-top:0.5rem;font-size:0.85rem;color:var(--secondary-text-color,#666);"></div>
         `;
@@ -871,13 +871,13 @@ class TodoListPanel extends HTMLElement {
           box.querySelector('#ei-start-import').disabled = true;
 
           for (const listData of selectedLists) {
-            status2.textContent = `Verarbeite "${listData.name}"â€¦`;
+            status2.textContent = `Verarbeite "${listData.name}"…`;
 
-            // PrÃ¼fen ob Liste existiert
+            // Prüfen ob Liste existiert
             let targetEntity = this._lists.find(l => l.id === listData.entity_id)?.id;
 
             if (!targetEntity) {
-              status2.textContent = `Erstelle Liste "${listData.name}"â€¦`;
+              status2.textContent = `Erstelle Liste "${listData.name}"…`;
               try {
                 const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
                   handler: 'local_todo', show_advanced_options: false,
@@ -933,7 +933,7 @@ class TodoListPanel extends HTMLElement {
                 }, { entity_id: targetEntity });
                 // Status setzen wenn erledigt
                 if (item.status === 'completed') {
-                  // Item finden (gerade erst angelegt, noch kein uid bekannt â€“ Ã¼ber summary matchen)
+                  // Item finden (gerade erst angelegt, noch kein uid bekannt – über summary matchen)
                   await new Promise(r => setTimeout(r, 500));
                   const freshItems = await new Promise((resolve) => {
                     let done = false;
@@ -954,7 +954,7 @@ class TodoListPanel extends HTMLElement {
             }
 
             // Reihenfolge wiederherstellen
-            status2.textContent = `Sortiere "${listData.name}"â€¦`;
+            status2.textContent = `Sortiere "${listData.name}"…`;
             const updatedItems = await new Promise((resolve) => {
               let done = false;
               this._hass.connection.subscribeMessage(
@@ -989,7 +989,7 @@ class TodoListPanel extends HTMLElement {
             }
           }
 
-          status2.textContent = `âœ“ ${selectedLists.length} Listen importiert.`;
+          status2.textContent = `✓ ${selectedLists.length} Listen importiert.`;
           this._subscribeItems();
         });
 
@@ -1004,16 +1004,16 @@ class TodoListPanel extends HTMLElement {
     this._detailTodo     = null;
     this._detailEditMode = false;
 
-    // Wenn aus Suche geÃ¶ffnet (mobile oder sidebar), nichts zurÃ¼cksetzen
+    // Wenn aus Suche geöffnet (mobile oder sidebar), nichts zurücksetzen
     if (this._searchReturnToResults) {
       this._searchReturnToResults = false;
     }
   }
 
-  // â”€â”€ iOS-Style Swipe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Kleiner Swipe  â†’ LÃ¶schen-Button einblenden (revealed)
-  // GroÃŸer Swipe   â†’ sofort lÃ¶schen
-  // Tap woanders  â†’ Button wieder zuklappen
+  // ── iOS-Style Swipe ──────────────────────────────────────
+  // Kleiner Swipe  → Löschen-Button einblenden (revealed)
+  // Großer Swipe   → sofort löschen
+  // Tap woanders  → Button wieder zuklappen
 
   _closeAllRevealed(exceptUid) {
     this.shadowRoot.querySelectorAll('.todo-item.revealed').forEach(el => {
@@ -1026,7 +1026,7 @@ class TodoListPanel extends HTMLElement {
     });
   }
 
-  // â”€â”€ Drag & Drop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Drag & Drop ──────────────────────────────────────────
 
   _dragStart(uid, clientY, clientX) {
     this._dragUid      = uid;
@@ -1040,7 +1040,7 @@ class TodoListPanel extends HTMLElement {
     const ul = this.shadowRoot.getElementById('todo-list');
     const liRect  = li.getBoundingClientRect();
 
-    // Platzhalter VOR dem Abheben einfÃ¼gen (hÃ¤lt den Platz)
+    // Platzhalter VOR dem Abheben einfügen (hält den Platz)
     const ph = document.createElement('li');
     ph.className    = 'drag-placeholder';
     ph.style.height = liRect.height + 'px';
@@ -1085,13 +1085,13 @@ class TodoListPanel extends HTMLElement {
     this._dragGhost.style.left = (clientX - this._dragOffsetX) + 'px';
     this._dragCurrentY = clientY;
 
-    // PrÃ¼fen ob Ã¼ber einer Sidebar-Liste (Desktop cross-list drop)
+    // Prüfen ob über einer Sidebar-Liste (Desktop cross-list drop)
     const sidebar = this.shadowRoot.getElementById('sidebar');
     const sidebarItems = sidebar ? [...sidebar.querySelectorAll('.sidebar-item')] : [];
     let overList = null;
     if (sidebar && sidebar.offsetParent !== null) {
       const sidebarRect = sidebar.getBoundingClientRect();
-      // Maus ist Ã¼ber dem Sidebar-Bereich (oder nah dran)
+      // Maus ist über dem Sidebar-Bereich (oder nah dran)
       if (clientX <= sidebarRect.right + 20) {
         for (const btn of sidebarItems) {
           const r = btn.getBoundingClientRect();
@@ -1112,7 +1112,7 @@ class TodoListPanel extends HTMLElement {
     });
     this._dragOverList = overList;
 
-    // Wenn Ã¼ber Sidebar â†’ keinen In-List-Move berechnen
+    // Wenn über Sidebar → keinen In-List-Move berechnen
     if (overList) return;
 
     // Ziel-Index anhand der Mitte des gezogenen Elements
@@ -1198,7 +1198,7 @@ class TodoListPanel extends HTMLElement {
             });
           }
         } catch(moveErr) { console.warn('move-to-top failed:', moveErr); }
-        // Item von Quellliste lÃ¶schen
+        // Item von Quellliste löschen
         await this._hass.callService('todo', 'remove_item', {
           item: srcUid,
         }, { entity_id: this._selected });
@@ -1215,7 +1215,7 @@ class TodoListPanel extends HTMLElement {
     const srcIdx = this._todos.findIndex(t => t.uid === srcUid);
     if (srcIdx === -1) { this._renderList(); return; }
 
-    // items[] enthÃ¤lt bereits alle Elemente auÃŸer dem gezogenen â†’
+    // items[] enthält bereits alle Elemente außer dem gezogenen →
     // targetIdx entspricht direkt der Position in newTodos nach splice
     const newTodos = [...this._todos];
     const [moved] = newTodos.splice(srcIdx, 1);
@@ -1304,7 +1304,7 @@ class TodoListPanel extends HTMLElement {
         return;
       }
 
-      // Vertikale Bewegung vor Long-Press â†’ Drag abbrechen
+      // Vertikale Bewegung vor Long-Press → Drag abbrechen
       if (Math.hypot(dx, dy) > 5) {
         clearTimeout(this._dragTimer);
         this._dragTimer = null;
@@ -1325,8 +1325,8 @@ class TodoListPanel extends HTMLElement {
 
       if (swipeStarted) {
         document.addEventListener('click', suppressNextClick, true);
-        this._dragJustEnded = true; // nachfolgenden click unterdrÃ¼cken
-        // Swipe auswerten â€“ identische Logik wie _onTouchEnd
+        this._dragJustEnded = true; // nachfolgenden click unterdrücken
+        // Swipe auswerten – identische Logik wie _onTouchEnd
         const el = this.shadowRoot.getElementById('item-' + uid);
         if (!el) return;
         el.style.transition = '';
@@ -1351,7 +1351,7 @@ class TodoListPanel extends HTMLElement {
       document.removeEventListener('mouseup', onUp);
     };
 
-    // Capture-Phase: nÃ¤chsten click nach Swipe/Drag abfangen bevor er irgendwo ankommt
+    // Capture-Phase: nächsten click nach Swipe/Drag abfangen bevor er irgendwo ankommt
     const suppressNextClick = ev => {
       ev.stopPropagation();
       ev.preventDefault();
@@ -1371,7 +1371,7 @@ class TodoListPanel extends HTMLElement {
   }
 
   _onTouchMove(e, uid) {
-    // Drag-Modus aktiv â†’ Ghost bewegen
+    // Drag-Modus aktiv → Ghost bewegen
     if (this._dragUid === uid) {
       e.preventDefault();
       this._updateDragGhost(e.touches[0].clientY, e.touches[0].clientX);
@@ -1382,13 +1382,13 @@ class TodoListPanel extends HTMLElement {
     const dx = e.touches[0].clientX - this._swipeStartX;
     const dy = e.touches[0].clientY - this._swipeStartY;
 
-    // Bewegung erkannt â†’ Long-Press Timer abbrechen
+    // Bewegung erkannt → Long-Press Timer abbrechen
     if (!this._swipeMoved && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
       clearTimeout(this._dragTimer);
       this._dragTimer = null;
     }
 
-    // Wenn vertikaler Scroll dominiert â†’ ignorieren
+    // Wenn vertikaler Scroll dominiert → ignorieren
     if (!this._swipeMoved && Math.abs(dy) > Math.abs(dx)) {
       this._swipeId = null;
       return;
@@ -1405,7 +1405,7 @@ class TodoListPanel extends HTMLElement {
       el.style.transition = 'none';
       el.style.transform  = `translateX(${clamped}px)`;
     } else if (dx > 0) {
-      // ZurÃ¼ckschieben, aber nicht Ã¼ber 0
+      // Zurückschieben, aber nicht über 0
       const base = el.classList.contains('revealed') ? -80 : 0;
       const clamped = Math.min(base + dx, 0);
       el.style.transition = 'none';
@@ -1434,23 +1434,23 @@ class TodoListPanel extends HTMLElement {
     const tx = parseFloat(el.style.transform?.match(/translateX\((-?\d+(?:\.\d+)?)px\)/)?.[1] ?? '0');
 
     if (tx < -160) {
-      // GroÃŸer Swipe â†’ sofort lÃ¶schen
+      // Großer Swipe → sofort löschen
       this._animateAndDelete(uid);
     } else if (tx < -40) {
-      // Kleiner Swipe â†’ einrasten, LÃ¶schen-Button zeigen
+      // Kleiner Swipe → einrasten, Löschen-Button zeigen
       el.classList.add('revealed');
       el.style.transform = '';
       el.closest('.swipe-wrapper')?.classList.add('open');
       this._closeAllRevealed(uid);
     } else {
-      // Zu wenig â†’ zuklappen
+      // Zu wenig → zuklappen
       el.classList.remove('revealed');
       el.style.transform = '';
       el.closest('.swipe-wrapper')?.classList.remove('open');
     }
   }
 
-  // â”€â”€ Rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Rendering ────────────────────────────────────────────
 
   _render() {
     this.shadowRoot.innerHTML = `
@@ -1463,7 +1463,7 @@ class TodoListPanel extends HTMLElement {
           background: var(--primary-background-color, #f0f4f8);
           font-family: var(--ha-font-family, Roboto, sans-serif);
           overflow: hidden;
-          /* FÃ¼llt den gesamten HA-Panel-Bereich */
+          /* Füllt den gesamten HA-Panel-Bereich */
           height: 100%;
           min-height: 100vh;
         }
@@ -1491,7 +1491,7 @@ class TodoListPanel extends HTMLElement {
           overflow: hidden;
         }
 
-        /* â”€â”€ App-Layout (Desktop: Sidebar + Main) â”€â”€ */
+        /* ── App-Layout (Desktop: Sidebar + Main) ── */
         .app-layout {
           display: flex;
           flex: 1;
@@ -1872,7 +1872,7 @@ class TodoListPanel extends HTMLElement {
           color: var(--error-color);
         }
 
-        /* â”€â”€ Content â”€â”€ */
+        /* ── Content ── */
         .content {
           padding: 1.25rem 1rem;
           max-width: 520px;
@@ -1880,7 +1880,7 @@ class TodoListPanel extends HTMLElement {
           margin: 0 auto;
         }
 
-        /* â”€â”€ List selector â”€â”€ */
+        /* ── List selector ── */
         .list-select {
           display: flex;
           align-items: center;
@@ -1900,7 +1900,7 @@ class TodoListPanel extends HTMLElement {
           outline: none;
         }
 
-        /* â”€â”€ Add row â”€â”€ */
+        /* ── Add row ── */
         .add-row {
           display: flex;
           gap: 0.5rem;
@@ -1934,7 +1934,7 @@ class TodoListPanel extends HTMLElement {
         .add-row button:active { transform: scale(0.96); }
         .add-row button:disabled { opacity: 0.4; cursor: default; }
 
-        /* â”€â”€ Todo items â”€â”€ */
+        /* ── Todo items ── */
         .todo-list {
           list-style: none;
           margin: 0; padding: 0;
@@ -1946,7 +1946,7 @@ class TodoListPanel extends HTMLElement {
           position: relative;
         }
 
-        /* â”€â”€ Drag & Drop â”€â”€ */
+        /* ── Drag & Drop ── */
         .dragging-source {
           opacity: 0.92;
           box-shadow: 0 8px 24px rgba(0,0,0,0.22);
@@ -1969,7 +1969,7 @@ class TodoListPanel extends HTMLElement {
           transition: transform 0.2s ease;
         }
 
-        /* Roter LÃ¶sch-Button hinter dem Item */
+        /* Roter Lösch-Button hinter dem Item */
         .delete-action {
           position: absolute;
           right: 0; top: 0; bottom: 0;
@@ -2018,7 +2018,7 @@ class TodoListPanel extends HTMLElement {
           overflow: hidden;
         }
 
-        /* Item ist geÃ¶ffnet (LÃ¶schen-Button sichtbar) */
+        /* Item ist geöffnet (Löschen-Button sichtbar) */
         .todo-item.revealed {
           transform: translateX(-80px);
           transition: transform 0.25s cubic-bezier(.4,0,.2,1);
@@ -2038,7 +2038,7 @@ class TodoListPanel extends HTMLElement {
           z-index: 1;
         }
         .check-circle.done { background: #1976d2; border-color: #1976d2; }
-        .check-circle.done::after { content: 'âœ“'; color: #fff; font-size: 0.78rem; font-weight: 700; }
+        .check-circle.done::after { content: '✓'; color: #fff; font-size: 0.78rem; font-weight: 700; }
 
         .todo-body { flex: 1; min-width: 0; }
 
@@ -2088,7 +2088,7 @@ class TodoListPanel extends HTMLElement {
         }
         .del-btn:hover { background: #ffebee; }
 
-        /* â”€â”€ States â”€â”€ */
+        /* ── States ── */
         .empty { text-align: center; color: var(--secondary-text-color, #aaa); padding: 2rem 0; font-size: 0.95rem; }
 
         .completed-section-label {
@@ -2117,7 +2117,7 @@ class TodoListPanel extends HTMLElement {
           --mdc-icon-button-size: 32px;
         }
 
-        /* â”€â”€ Custom Dialog â”€â”€ */
+        /* ── Custom Dialog ── */
         .dialog-overlay {
           display: none;
           position: fixed;
@@ -2216,7 +2216,7 @@ class TodoListPanel extends HTMLElement {
         }
         .dialog-btn-confirm:disabled { opacity: 0.4; cursor: default; }
 
-        /* â”€â”€ Reorder Dialog â”€â”€ */
+        /* ── Reorder Dialog ── */
         .reorder-list {
           list-style: none;
           margin: 0.5rem 0;
@@ -2263,7 +2263,7 @@ class TodoListPanel extends HTMLElement {
           padding: 0;
         }
 
-        /* â”€â”€ Detail Panel â”€â”€ */
+        /* ── Detail Panel ── */
         .detail-content {
           padding: 1.25rem 1rem;
           flex: 1;
@@ -2332,11 +2332,11 @@ class TodoListPanel extends HTMLElement {
           appearance: none;
           color-scheme: light;
           min-height: 3rem;
-          /* Sicherstellen dass leere Felder gleich hoch sind wie befÃ¼llte */
+          /* Sicherstellen dass leere Felder gleich hoch sind wie befüllte */
           min-width: 0;
         }
 
-        /* Placeholder-Farbe fÃ¼r leere date/time Inputs (iOS zeigt sonst nichts) */
+        /* Placeholder-Farbe für leere date/time Inputs (iOS zeigt sonst nichts) */
         .detail-field input[type="date"]:not(:valid),
         .detail-field input[type="time"]:not(:valid) {
           color: var(--secondary-text-color, #aaa);
@@ -2395,7 +2395,7 @@ class TodoListPanel extends HTMLElement {
         }
         .detail-cancel-btn:active { opacity: 0.7; }
 
-        /* â”€â”€ Readonly View â”€â”€ */
+        /* ── Readonly View ── */
         .detail-readonly {
           display: flex;
           flex-direction: column;
@@ -2444,10 +2444,10 @@ class TodoListPanel extends HTMLElement {
       <!-- Slider-Wrapper: Liste links, Detail rechts -->
       <div class="slider" id="slider">
 
-      <!-- â”€â”€ Listenansicht â”€â”€ -->
+      <!-- ── Listenansicht ── -->
       <div class="view" id="list-view">
         <div class="header" id="list-header">
-          <ha-icon-button id="menu-btn" label="MenÃ¼">
+          <ha-icon-button id="menu-btn" label="Menü">
             <ha-icon icon="mdi:menu"></ha-icon>
           </ha-icon-button>
           <span class="app-title">To-Do</span>
@@ -2456,7 +2456,7 @@ class TodoListPanel extends HTMLElement {
               <button class="header-title-btn" id="header-title-btn">
                 <ha-icon id="header-title-icon" icon="mdi:clipboard-list"></ha-icon>
                 <span id="header-title-text">To Do</span>
-                <span class="title-chevron" id="title-chevron">â–¾</span>
+                <span class="title-chevron" id="title-chevron">▾</span>
               </button>
               <div class="list-picker-dropdown" id="list-picker-dropdown"></div>
             </div>
@@ -2472,8 +2472,8 @@ class TodoListPanel extends HTMLElement {
               <button id="new-list-btn">Neue Liste erstellen</button>
               <button id="list-detail-btn">Detailansicht</button>
               <button id="rename-list-btn">Liste umbenennen</button>
-              <button id="reorder-list-btn">Reihenfolge Ã¤ndern</button>
-              <button id="delete-list-btn" class="menu-danger">Liste lÃ¶schen</button>
+              <button id="reorder-list-btn">Reihenfolge ändern</button>
+              <button id="delete-list-btn" class="menu-danger">Liste löschen</button>
               <button id="export-import-btn">Export / Import</button>
             </div>
           </div>
@@ -2486,8 +2486,8 @@ class TodoListPanel extends HTMLElement {
           <div class="main-area">
             <div class="content">
               <div class="add-row">
-                <input id="new-input" type="text" placeholder="Aufgabe hinzufÃ¼genâ€¦" />
-                <button id="add-btn" disabled style="font-size:1.5rem;line-height:1;padding:0.4rem 0.9rem;">ï¼‹</button>
+                <input id="new-input" type="text" placeholder="Aufgabe hinzufügen…" />
+                <button id="add-btn" disabled style="font-size:1.5rem;line-height:1;padding:0.4rem 0.9rem;">＋</button>
               </div>
 
               <ul class="todo-list" id="todo-list"></ul>
@@ -2496,10 +2496,10 @@ class TodoListPanel extends HTMLElement {
         </div>
       </div>
 
-      <!-- â”€â”€ Detailansicht â”€â”€ -->
+      <!-- ── Detailansicht ── -->
       <div class="view" id="detail-panel">
         <div class="header detail-header-bar">
-          <ha-icon-button id="detail-back-btn" label="ZurÃ¼ck">
+          <ha-icon-button id="detail-back-btn" label="Zurück">
             <ha-icon icon="mdi:arrow-left"></ha-icon>
           </ha-icon-button>
           <span class="detail-header-title" id="detail-header-title"></span>
@@ -2512,7 +2512,7 @@ class TodoListPanel extends HTMLElement {
                 <ha-icon icon="mdi:dots-vertical"></ha-icon>
               </ha-icon-button>
               <div class="detail-dropdown" id="detail-dropdown">
-                <button id="detail-delete-btn" class="menu-danger">Eintrag lÃ¶schen</button>
+                <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
           </div>
@@ -2520,7 +2520,7 @@ class TodoListPanel extends HTMLElement {
 
         <div class="detail-content">
 
-          <!-- â”€â”€ Readonly-Ansicht â”€â”€ -->
+          <!-- ── Readonly-Ansicht ── -->
           <div class="detail-readonly">
             <div class="view-title" id="view-title"></div>
             <div class="detail-field" id="view-notes-section" style="display:none">
@@ -2528,7 +2528,7 @@ class TodoListPanel extends HTMLElement {
               <div class="view-section-value" id="view-notes"></div>
             </div>
             <div class="detail-field" id="view-due-section" style="display:none">
-              <label>FÃ¤lligkeit</label>
+              <label>Fälligkeit</label>
               <div class="view-section-value" id="view-due"></div>
             </div>
             <div class="detail-field" id="view-modified-section" style="display:none">
@@ -2537,7 +2537,7 @@ class TodoListPanel extends HTMLElement {
             </div>
           </div>
 
-          <!-- â”€â”€ Bearbeitungsformular â”€â”€ -->
+          <!-- ── Bearbeitungsformular ── -->
           <div class="detail-editform">
             <div class="detail-field">
               <label>Titel</label>
@@ -2545,18 +2545,18 @@ class TodoListPanel extends HTMLElement {
             </div>
             <div class="detail-field">
               <label>Notizen</label>
-              <textarea id="detail-notes" placeholder="Zusatzinformationen eingebenâ€¦"></textarea>
+              <textarea id="detail-notes" placeholder="Zusatzinformationen eingeben…"></textarea>
             </div>
             <div class="due-row">
               <div class="detail-field">
-                <label>FÃ¤lligkeitsdatum</label>
+                <label>Fälligkeitsdatum</label>
                 <input id="detail-due-date" type="date" />
               </div>
               <div class="detail-field">
                 <label>Uhrzeit</label>
                 <input id="detail-due-time" type="time" />
               </div>
-              <button class="due-clear-btn" id="detail-due-clear" title="Datum lÃ¶schen">âœ•</button>
+              <button class="due-clear-btn" id="detail-due-clear" title="Datum löschen">✕</button>
             </div>
             <div id="detail-error" style="display:none;color:#c62828;background:#ffebee;border-radius:8px;padding:0.6rem 0.9rem;font-size:0.88rem;margin-bottom:0.5rem;"></div>
             <div class="detail-field" id="edit-modified-section" style="display:none">
@@ -2578,7 +2578,7 @@ class TodoListPanel extends HTMLElement {
       <div class="dialog-overlay" id="dialog-overlay">
         <div class="dialog-box" id="dialog-box">
           <h3 id="dialog-title">Neue Liste</h3>
-          <input id="dialog-input" type="text" placeholder="Name der Listeâ€¦" />
+          <input id="dialog-input" type="text" placeholder="Name der Liste…" />
           <div class="icon-picker-section" id="icon-picker-section">
             <label>Symbol</label>
             <ha-icon-picker id="dialog-icon-picker"></ha-icon-picker>
@@ -2607,7 +2607,7 @@ class TodoListPanel extends HTMLElement {
       this.dispatchEvent(new CustomEvent('hass-toggle-menu', { bubbles: true, composed: true }));
     });
 
-    // Mobile: Listenwechsel Ã¼ber Header-Titel
+    // Mobile: Listenwechsel über Header-Titel
     const titleBtn   = this.shadowRoot.getElementById('header-title-btn');
     const pickerDrop = this.shadowRoot.getElementById('list-picker-dropdown');
     titleBtn.addEventListener('click', e => {
@@ -2615,7 +2615,7 @@ class TodoListPanel extends HTMLElement {
       pickerDrop.classList.toggle('open');
     });
 
-    // Drei-Punkte-MenÃ¼ (Listenansicht)
+    // Drei-Punkte-Menü (Listenansicht)
     const mainMenuBtn  = this.shadowRoot.getElementById('main-menu-btn');
     const mainDropdown = this.shadowRoot.getElementById('main-dropdown');
     mainMenuBtn.addEventListener('click', e => {
@@ -2623,14 +2623,14 @@ class TodoListPanel extends HTMLElement {
       mainDropdown.classList.toggle('open');
     });
 
-    // Such-Button (im MenÃ¼)
+    // Such-Button (im Menü)
     this.shadowRoot.getElementById('search-btn').addEventListener('click', () => {
       mainDropdown.classList.remove('open');
       this._showSearch();
     });
     this.shadowRoot.getElementById('new-list-btn').addEventListener('click', async () => {
       mainDropdown.classList.remove('open');
-      const result = await this._showDialog('Neue Liste', 'Name der Listeâ€¦', 'Erstellen');
+      const result = await this._showDialog('Neue Liste', 'Name der Liste…', 'Erstellen');
       if (!result?.name) return;
       try {
         const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
@@ -2662,7 +2662,7 @@ class TodoListPanel extends HTMLElement {
       if (!this._selected) return;
       const currentList = this._lists.find(l => l.id === this._selected);
       if (!currentList) return;
-      const result = await this._showDialog('Liste umbenennen', 'Neuer Nameâ€¦', 'Speichern', { showIconPicker: true, defaultValue: currentList.name, defaultIcon: currentList.icon });
+      const result = await this._showDialog('Liste umbenennen', 'Neuer Name…', 'Speichern', { showIconPicker: true, defaultValue: currentList.name, defaultIcon: currentList.icon });
       if (!result?.name) return;
       try {
         await this._hass.callWS({
@@ -2687,9 +2687,9 @@ class TodoListPanel extends HTMLElement {
       if (!this._selected) return;
       const listName = this._lists.find(l => l.id === this._selected)?.name ?? this._selected;
       const confirmed = await this._showConfirm(
-        'Liste lÃ¶schen',
-        `â€ž${listName}" wirklich lÃ¶schen?\nDieser Vorgang kann nicht rÃ¼ckgÃ¤ngig gemacht werden.`,
-        'LÃ¶schen'
+        'Liste löschen',
+        `„${listName}" wirklich löschen?\nDieser Vorgang kann nicht rückgängig gemacht werden.`,
+        'Löschen'
       );
       if (!confirmed) return;
       try {
@@ -2699,7 +2699,7 @@ class TodoListPanel extends HTMLElement {
           entity_id: this._selected,
         });
         if (!entry?.config_entry_id) {
-          alert('Diese Liste kann nicht gelÃ¶scht werden (kein Config-Eintrag gefunden).');
+          alert('Diese Liste kann nicht gelöscht werden (kein Config-Eintrag gefunden).');
           return;
         }
         // Korrekter Aufruf laut HA-Source: callApi DELETE
@@ -2710,7 +2710,7 @@ class TodoListPanel extends HTMLElement {
         if (this._selected) this._subscribeItems();
         else this._renderList();
       } catch(e) {
-        alert('Fehler beim LÃ¶schen: ' + (e?.message ?? JSON.stringify(e)));
+        alert('Fehler beim Löschen: ' + (e?.message ?? JSON.stringify(e)));
       }
     });
 
@@ -2721,7 +2721,7 @@ class TodoListPanel extends HTMLElement {
 
     this.shadowRoot.getElementById('detail-back-btn').addEventListener('click', () => {
       if (this._detailEditMode) {
-        this._saveDetail(true); // speichern + zurÃ¼ck zur Ãœbersicht
+        this._saveDetail(true); // speichern + zurück zur Übersicht
       } else {
         this._closeDetail();
       }
@@ -2730,11 +2730,11 @@ class TodoListPanel extends HTMLElement {
     this.shadowRoot.getElementById('detail-save').addEventListener('click', () => this._saveDetail());
     this.shadowRoot.getElementById('detail-cancel').addEventListener('click', () => {
       if (this._detailTodo?.description || this._detailTodo?.due) {
-        // Hat bereits Daten â†’ zurÃ¼ck zur Readonly-Ansicht
+        // Hat bereits Daten → zurück zur Readonly-Ansicht
         this._detailEditMode = false;
         this._renderDetailMode();
       } else {
-        // Neuer Eintrag ohne Daten â†’ Detail schlieÃŸen
+        // Neuer Eintrag ohne Daten → Detail schließen
         this._closeDetail();
       }
     });
@@ -2760,7 +2760,7 @@ class TodoListPanel extends HTMLElement {
       this._animateAndDelete(uid);
     });
 
-    // Klick auÃŸerhalb â†’ alle Dropdowns schlieÃŸen + Swipe-Buttons zuklappen
+    // Klick außerhalb → alle Dropdowns schließen + Swipe-Buttons zuklappen
     this.shadowRoot.addEventListener('click', e => {
       pickerDrop.classList.remove('open');
       mainDropdown.classList.remove('open');
@@ -2787,11 +2787,11 @@ class TodoListPanel extends HTMLElement {
       return isNaN(count) ? 0 : count;
     };
 
-    // Sidebar-Items (Desktop) â€“ direkt die Items, kein Heading
+    // Sidebar-Items (Desktop) – direkt die Items, kein Heading
     sidebar.innerHTML = `
       <div class="sidebar-search">
         <input type="text" id="sidebar-search-input" placeholder="Suchen" />
-        <button class="sidebar-search-clear" id="sidebar-search-clear" style="display:none;">âœ•</button>
+        <button class="sidebar-search-clear" id="sidebar-search-clear" style="display:none;">✕</button>
         <svg class="sidebar-search-icon" id="sidebar-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
         </svg>
@@ -2859,7 +2859,7 @@ class TodoListPanel extends HTMLElement {
         this._selectList(btn.dataset.id);
       });
 
-      // Long-Press Drag fÃ¼r Reihenfolge
+      // Long-Press Drag für Reihenfolge
       const startDrag = (clientY) => {
         if (this._sidebarDragId) return;
         this._sidebarDragId = btn.dataset.id;
@@ -2945,13 +2945,13 @@ class TodoListPanel extends HTMLElement {
       });
     });
 
-    // Dropdown (Mobile Header) â€“ nur relevant wenn mehrere Listen vorhanden
+    // Dropdown (Mobile Header) – nur relevant wenn mehrere Listen vorhanden
     if (chevron) chevron.style.display = this._lists.length > 1 ? '' : 'none';
     dropdown.innerHTML = this._lists.map(l => `
       <button class="list-picker-item${l.id === this._selected ? ' active' : ''}" data-id="${l.id}">
         <ha-icon icon="${l.icon}" style="opacity:0.5;flex-shrink:0;--mdc-icon-size:20px"></ha-icon>
         <span style="flex:1">${this._esc(l.name)}</span>
-        ${l.id === this._selected ? '<span class="list-picker-check">âœ“</span>' : ''}
+        ${l.id === this._selected ? '<span class="list-picker-check">✓</span>' : ''}
       </button>
     `).join('');
 
@@ -3000,14 +3000,14 @@ class TodoListPanel extends HTMLElement {
     const buttons = [...sidebar.querySelectorAll('.sidebar-item')];
     const currentOrder = buttons.map(b => b.dataset.id);
 
-    // Drag-Item aus alter Position entfernen und an neuer einfÃ¼gen
+    // Drag-Item aus alter Position entfernen und an neuer einfügen
     const oldIdx = this._lists.findIndex(l => l.id === dragId);
     let newIdx = this._sidebarTargetIdx ?? oldIdx;
     if (oldIdx === -1) return;
 
     const newOrder = this._lists.map(l => l.id).filter(id => id !== dragId);
     // targetIdx bezieht sich auf sichtbare Items (ohne das versteckte Original)
-    // also ist es bereits die korrekte EinfÃ¼geposition im gefilterten Array
+    // also ist es bereits die korrekte Einfügeposition im gefilterten Array
     newOrder.splice(Math.min(newIdx, newOrder.length), 0, dragId);
 
     // Speichern und Sidebar neu rendern
@@ -3035,7 +3035,7 @@ class TodoListPanel extends HTMLElement {
         if (todoList) todoList.style.display = '';
         const oldResults = this.shadowRoot.getElementById('sidebar-search-results');
         if (oldResults) oldResults.remove();
-        // Header-Titel zurÃ¼cksetzen
+        // Header-Titel zurücksetzen
         const titleEl = this.shadowRoot.getElementById('header-title-text');
         const currentList = this._lists.find(l => l.id === this._selected);
         if (titleEl) titleEl.textContent = currentList?.name ?? 'To Do';
@@ -3044,7 +3044,7 @@ class TodoListPanel extends HTMLElement {
       return;
     }
 
-    // Items laden falls nÃ¶tig
+    // Items laden falls nötig
     if (!this._searchAllItems || this._searchAllItems.length === 0) {
       this._searchAllItems = [];
       for (const list of this._lists) {
@@ -3097,7 +3097,7 @@ class TodoListPanel extends HTMLElement {
               <div class="todo-text ${item.status === 'completed' ? 'done' : ''}">${this._esc(item.summary)}</div>
               <div class="todo-note-preview">${this._esc(item.listName)}</div>
             </div>
-            <span class="chevron">â€º</span>
+            <span class="chevron">›</span>
           </div>
         </li>
       `).join('') + '</ul>';
@@ -3120,7 +3120,7 @@ class TodoListPanel extends HTMLElement {
   }
 
   async _createNewList() {
-    const result = await this._showDialog('Neue Liste', 'Name der Listeâ€¦', 'Erstellen');
+    const result = await this._showDialog('Neue Liste', 'Name der Liste…', 'Erstellen');
     if (!result?.name) return;
     try {
       const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
@@ -3175,10 +3175,10 @@ class TodoListPanel extends HTMLElement {
       return;
     }
 
-    // Marker fÃ¼r ersten erledigten Block
+    // Marker für ersten erledigten Block
     const firstCompleted = this._todos.find(t => t.status === 'completed');
 
-    // â”€â”€ Keyed Reconciliation: kein kompletter DOM-Neuaufbau â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Keyed Reconciliation: kein kompletter DOM-Neuaufbau ──────────────
     // Bestehende <li> nach uid indexieren
     const existing = new Map();
     ul.querySelectorAll('li.swipe-wrapper[data-uid]').forEach(li => {
@@ -3192,8 +3192,8 @@ class TodoListPanel extends HTMLElement {
       if (!newUids.has(uid)) li.remove();
     });
 
-    // 2) EinfÃ¼gen/Verschieben/Aktualisieren in richtiger Reihenfolge
-    let refNode = null; // Element nach dem eingefÃ¼gt wird (null = prepend)
+    // 2) Einfügen/Verschieben/Aktualisieren in richtiger Reihenfolge
+    let refNode = null; // Element nach dem eingefügt wird (null = prepend)
     for (const todo of this._todos) {
       const contentKey = `${todo.summary}|${todo.status}|${todo.description ?? ''}|${todo.due ?? ''}`;
       let li = existing.get(todo.uid);
@@ -3207,7 +3207,7 @@ class TodoListPanel extends HTMLElement {
         li.innerHTML = this._todoItemHtml(todo);
         this._bindItemEvents(li, todo.uid);
       } else {
-        // Inhalt aktualisieren wenn sich etwas geÃ¤ndert hat
+        // Inhalt aktualisieren wenn sich etwas geändert hat
         if (li.dataset.contentKey !== contentKey) {
           li.dataset.contentKey = contentKey;
           const itemDiv = li.querySelector('.todo-item');
@@ -3240,7 +3240,7 @@ class TodoListPanel extends HTMLElement {
 
         const deleteBtn = document.createElement('ha-icon-button');
         deleteBtn.className = 'completed-section-delete';
-        deleteBtn.setAttribute('label', 'Erledigte To-Dos lÃ¶schen');
+        deleteBtn.setAttribute('label', 'Erledigte To-Dos löschen');
         deleteBtn.innerHTML = '<ha-icon icon="mdi:trash-can-outline"></ha-icon>';
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -3261,9 +3261,9 @@ class TodoListPanel extends HTMLElement {
     if (completed.length === 0) return;
 
     const confirmed = await this._showConfirm(
-      'Erledigte To-Dos lÃ¶schen',
-      `Willst du wirklich ${completed.length} erledigte To-Do${completed.length > 1 ? 's' : ''} lÃ¶schen?`,
-      'LÃ¶schen'
+      'Erledigte To-Dos löschen',
+      `Willst du wirklich ${completed.length} erledigte To-Do${completed.length > 1 ? 's' : ''} löschen?`,
+      'Löschen'
     );
     if (!confirmed) return;
 
@@ -3285,7 +3285,7 @@ class TodoListPanel extends HTMLElement {
     }
   }
 
-  // HTML fÃ¼r das gesamte <li> (ohne <li> selbst)
+  // HTML für das gesamte <li> (ohne <li> selbst)
   _todoItemHtml(todo) {
     return `
       <div class="delete-action" data-uid="${todo.uid}">
@@ -3297,7 +3297,7 @@ class TodoListPanel extends HTMLElement {
       ${this._todoItemInnerHtml(todo)}`;
   }
 
-  // HTML nur fÃ¼r das innere .todo-item div
+  // HTML nur für das innere .todo-item div
   _todoItemInnerHtml(todo) {
     return `<div class="todo-item" id="item-${todo.uid}">
       <div class="check-circle ${todo.status === 'completed' ? 'done' : ''}"
@@ -3305,13 +3305,13 @@ class TodoListPanel extends HTMLElement {
       <div class="todo-body">
         <div class="todo-text ${todo.status === 'completed' ? 'done' : ''}">${this._esc(todo.summary)}</div>
         ${todo.description && !todo.due ? `<div class="todo-note-preview">${this._esc(todo.description)}</div>` : ''}
-        ${todo.due         ? `<div class="due-date">ðŸ“… ${todo.due}</div>` : ''}
+        ${todo.due         ? `<div class="due-date">📅 ${todo.due}</div>` : ''}
       </div>
-      <span class="chevron">â€º</span>
+      <span class="chevron">›</span>
     </div>`;
   }
 
-  // Event-Listener fÃ¼r ein <li.swipe-wrapper> registrieren
+  // Event-Listener für ein <li.swipe-wrapper> registrieren
   _bindItemEvents(li, uid) {
     const circle = li.querySelector('.check-circle');
     if (circle) {
@@ -3343,7 +3343,7 @@ class TodoListPanel extends HTMLElement {
       itemDiv.addEventListener('touchstart', e => this._onTouchStart(e, uid), { passive: false });
       itemDiv.addEventListener('touchmove',  e => this._onTouchMove(e, uid),  { passive: false });
       itemDiv.addEventListener('touchend',   e => this._onTouchEnd(e, uid));
-      // Desktop: Mouse-Events fÃ¼r Drag
+      // Desktop: Mouse-Events für Drag
       itemDiv.addEventListener('mousedown',  e => this._onMouseDown(e, uid));
     }
   }
@@ -3413,7 +3413,7 @@ class TodoListPanel extends HTMLElement {
       const titleEl = this.shadowRoot.getElementById('dialog-title');
       const iconSection = this.shadowRoot.getElementById('icon-picker-section');
 
-      titleEl.textContent = 'Reihenfolge Ã¤ndern';
+      titleEl.textContent = 'Reihenfolge ändern';
       iconSection.style.display = 'none';
       input.style.display = 'none';
       confirmBtn.textContent = 'Speichern';
@@ -3459,7 +3459,7 @@ class TodoListPanel extends HTMLElement {
             if (!ghost) return;
             ghost.style.top = (clientY - offsetY) + 'px';
 
-            // Alle sichtbaren Items (ohne Placeholder) fÃ¼r Positionsbestimmung
+            // Alle sichtbaren Items (ohne Placeholder) für Positionsbestimmung
             const siblings = [...reorderEl.children].filter(el => el !== ph);
             let inserted = false;
             for (const sib of siblings) {
@@ -3593,7 +3593,7 @@ class TodoListPanel extends HTMLElement {
       iconSection.style.display = 'none';
       input.style.display = 'none';
 
-      // Message als Paragraph einfÃ¼gen
+      // Message als Paragraph einfügen
       let msgEl = this.shadowRoot.getElementById('dialog-message');
       if (!msgEl) {
         msgEl = document.createElement('p');
