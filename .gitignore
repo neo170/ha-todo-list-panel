@@ -10,10 +10,7 @@ __pycache__/
 .DS_Store
 
 # Deploy (enthält Token!)
-deploy.ps1
-deploy.cmd
 deploy-github.ps1
-deploy-github.cmd
 README-Deploy.md
 
 # Zip-Releases

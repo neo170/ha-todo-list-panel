@@ -9,4 +9,3 @@ Custom Home Assistant Panel für Todo-Listen mitDrag & Drop, Swipe-to-Delete und
 - **Import/Export**
 
 
-

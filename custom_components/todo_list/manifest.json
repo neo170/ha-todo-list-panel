@@ -1,7 +1,7 @@
 {
     "domain":  "todo_list",
     "name":  "Todo List Panel",
-    "version":  "1.0.54",
+    "version":  "1.0.55",
     "documentation":  "https://github.com/neo170/ha-todo-list-panel",
     "issue_tracker":  "https://github.com/neo170/ha-todo-list-panel/issues",
     "requirements":  [
