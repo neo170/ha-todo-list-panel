@@ -267,6 +267,27 @@ class TodoListPanel extends HTMLElement {
     }
   }
 
+  // Aktualisiert den Badge der aktuellen Liste in der Sidebar direkt aus this._todos,
+  // ohne die gesamte Sidebar neu zu rendern (verhindert Stale-Badge nach optimistischen Updates).
+  _updateSidebarBadge() {
+    const sidebar = this.shadowRoot.getElementById('sidebar');
+    if (!sidebar || !this._selected) return;
+    const btn = sidebar.querySelector(`.sidebar-item[data-id="${this._selected}"]`);
+    if (!btn) return;
+    const count = this._todos.filter(t => t.status !== 'completed').length;
+    let badge = btn.querySelector('.sidebar-item-badge');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'sidebar-item-badge';
+        btn.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else {
+      badge?.remove();
+    }
+  }
+
   async _deleteTodo(uid) {
     if (!this._isOnline()) return;
     // Item merken falls wir es wiederherstellen müssen
@@ -274,6 +295,7 @@ class TodoListPanel extends HTMLElement {
     // Optimistisch: Sofort aus UI entfernen
     this._todos = this._todos.filter(t => t.uid !== uid);
     this._renderList();
+    this._updateSidebarBadge();
     try {
       await this._callWithTimeout(
         this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
