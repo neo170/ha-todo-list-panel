@@ -3653,4 +3653,6 @@ class TodoListPanel extends HTMLElement {
   }
 }
 
-customElements.define('todo-list-panel', TodoListPanel);
+if (!customElements.get('todo-list-panel')) {
+  customElements.define('todo-list-panel', TodoListPanel);
+}
