@@ -320,12 +320,18 @@ class TodoListPanel extends HTMLElement {
     if (!todo) return;
 
     const bodyEl   = this.shadowRoot.getElementById('detail-box-body');
-    const titleDiv  = bodyEl?.querySelector('.title-line');
-    const newTitle  = titleDiv ? (titleDiv.textContent.trim() || todo.summary) : todo.summary;
+    const titleSpan = bodyEl?.querySelector('span.title-line');
+    const newTitle  = titleSpan ? (titleSpan.textContent.trim() || todo.summary) : todo.summary;
     let newNotes = todo.description ?? '';
     if (bodyEl) {
       const clone = bodyEl.cloneNode(true);
-      clone.querySelector('.title-line')?.remove();
+      const cloneSpan = clone.querySelector('.title-line');
+      if (cloneSpan) {
+        // Trennungs-<br> nach dem title-span ebenfalls entfernen
+        const sep = cloneSpan.nextSibling;
+        if (sep?.nodeName === 'BR') clone.removeChild(sep);
+        clone.removeChild(cloneSpan);
+      }
       newNotes = this._ceToText(clone);
     }
 
@@ -413,17 +419,19 @@ class TodoListPanel extends HTMLElement {
     if (edit) {
       box.classList.add('editing');
       bodyEl.contentEditable = 'true';
-      // Titel als .title-line div, Notizen als <br>-getrennter Text danach
+      // Titel als INLINE-Span, danach ein <br> als Trenner, dann Notizen.
+      // Wichtig: inline span (kein div/block-Element) damit der Browser Cursor
+      // nach dem span platzieren kann – block-Elemente werden vom Editor normalisiert.
       const notesHtml = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
-      bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
+      bodyEl.innerHTML = `<span class="title-line">${this._esc(todo.summary ?? '')}</span><br>${notesHtml}`;
 
       if (!this._editEnteredByClick) {
         setTimeout(() => {
-          const titleDiv = bodyEl.querySelector('.title-line');
-          if (titleDiv) {
-            titleDiv.focus();
+          const titleSpan = bodyEl.querySelector('.title-line');
+          if (titleSpan) {
+            bodyEl.focus();
             const range = document.createRange();
-            range.selectNodeContents(titleDiv);
+            range.selectNodeContents(titleSpan);
             range.collapse(false);
             const sel = window.getSelection();
             if (sel) { sel.removeAllRanges(); sel.addRange(range); }
@@ -2569,20 +2577,23 @@ class TodoListPanel extends HTMLElement {
       e.stopImmediatePropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
-        const titleDiv = bodyEl.querySelector('.title-line');
+        const titleSpan = bodyEl.querySelector('span.title-line');
         const sel = window.getSelection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
-        if (titleDiv && (titleDiv.contains(range.startContainer) || titleDiv === range.startContainer)) {
-          // Im Titel: Cursor hinter das title-line-Div verschieben (Beginn der Notizen)
-          range.setStartAfter(titleDiv);
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
+        if (titleSpan && (titleSpan.contains(range.startContainer) || titleSpan === range.startContainer)) {
+          // Im Titel: Cursor nach dem <br>-Trenner (Beginn der Notizen) verschieben.
+          // titleSpan ist inline → nextSibling ist der <br>-Trenner → setStartAfter(br)
+          // funktioniert weil inline-Elemente echte DOM-Positionen nach sich haben.
+          const sep = titleSpan.nextSibling;
+          if (sep?.nodeName === 'BR') {
+            range.setStartAfter(sep);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
         } else {
-          // In Notizen: browsereigenes insertLineBreak-Kommando verwenden.
-          // execCommand verwaltet Cursor und Scroll intern – vermeidet das Scrollen
-          // des äußeren HA-Containers, das durch manuelles sel.addRange() ausgelöst wird.
+          // In Notizen: browsereigenes insertLineBreak-Kommando
           document.execCommand('insertLineBreak');
         }
       }
@@ -2590,16 +2601,16 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: nur Plain Text; im Titel-Div nur erste Zeile
+    // Paste: nur Plain Text; im Titel-Span nur erste Zeile
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      const titleDiv = bodyEl.querySelector('.title-line');
+      const titleSpan = bodyEl.querySelector('span.title-line');
       const sel = window.getSelection();
       if (!sel || !sel.rangeCount) return;
       const range = sel.getRangeAt(0);
-      const inTitle = titleDiv && (titleDiv.contains(range.startContainer) || titleDiv === range.startContainer);
+      const inTitle = titleSpan && (titleSpan.contains(range.startContainer) || titleSpan === range.startContainer);
       if (inTitle) text = text.split('\n')[0];
       range.deleteContents();
       const lines = text.split('\n');
