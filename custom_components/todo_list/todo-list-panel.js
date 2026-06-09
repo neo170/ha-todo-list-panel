@@ -618,8 +618,9 @@ class TodoListPanel extends HTMLElement {
   // Wandelt contenteditable-HTML in plain text um
   _ceToText(el) {
     const tmp = document.createElement('div');
-    // Checkbox-Spans explizit zu '\u2610 '/'\u2611 ' umwandeln bevor textContent extrahiert wird
     tmp.innerHTML = el.innerHTML
+      // Whitespace zwischen Tags entfernen (Chrome fügt \n zwischen divs ein)
+      .replace(/>\s+</g, '><')
       .replace(/<span[^>]*class="cb-box"[^>]*data-checked="1"[^>]*>[^<]*<\/span>/gi, '\u2611 ')
       .replace(/<span[^>]*class="cb-box"[^>]*data-checked="0"[^>]*>[^<]*<\/span>/gi, '\u2610 ')
       .replace(/<div><br\s*\/?><\/div>/gi, '\n')
