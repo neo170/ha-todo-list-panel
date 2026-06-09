@@ -422,10 +422,11 @@ class TodoListPanel extends HTMLElement {
     if (edit) {
       box.classList.add('editing');
       bodyEl.contentEditable = 'plaintext-only';
-      // Gleiche DOM-Struktur wie Display-Modus (<div class="title-line">) vermeidet
-      // Layout-Shift beim Klick. Leere Notizen bekommen <br> als Cursor-Landezone.
-      const notesHtml = (todo.description ?? '').split('\n').map(l => this._renderNotesLineEdit(l)).join('<br>');
-      bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml || '<br>'}`;
+      // Chrome plaintext-only nutzt intern <div> pro Zeile. Wir setzen das gleiche
+      // Format direkt, um Doppel-Zeilenumbrüche durch DOM-Normalisierung zu vermeiden.
+      const lines = (todo.description ?? '').split('\n');
+      const notesHtml = lines.map(l => `<div>${this._renderNotesLineEdit(l) || '<br>'}</div>`).join('');
+      bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml || '<div><br></div>'}`;
 
       if (!this._editEnteredByClick) {
         setTimeout(() => {
