@@ -2545,37 +2545,15 @@ class TodoListPanel extends HTMLElement {
       }
     });
 
-    // Detail-Box: mousedown → Edit-Modus + Cursor an Klick-Position setzen (ein Klick)
+    // Detail-Box: mousedown → Edit-Modus; kein preventDefault damit der Browser
+    // den Cursor nach unserem synchronen DOM-Update an der Klickposition setzt.
     const detailBox = this.shadowRoot.getElementById('detail-box');
     detailBox.addEventListener('mousedown', (e) => {
       if (!this._detailEditMode) {
-        e.preventDefault(); // Kontrolle über Fokus selbst übernehmen
-        const clickX = e.clientX;
-        const clickY = e.clientY;
-        this._detailEditMode      = true;
-        this._editEnteredByClick  = true;
+        this._detailEditMode     = true;
+        this._editEnteredByClick = true;
         this._renderDetailMode();
-        // Nach DOM-Update Cursor an Klickkoordinaten setzen
-        requestAnimationFrame(() => {
-          const tEl = this.shadowRoot.getElementById('detail-box-title');
-          const nEl = this.shadowRoot.getElementById('detail-box-notes');
-          let range = null;
-          if (document.caretRangeFromPoint) {
-            range = document.caretRangeFromPoint(clickX, clickY);
-          } else if (document.caretPositionFromPoint) {
-            const pos = document.caretPositionFromPoint(clickX, clickY);
-            if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
-          }
-          if (range && (tEl?.contains(range.startContainer) || nEl?.contains(range.startContainer))) {
-            const target = tEl?.contains(range.startContainer) ? tEl : nEl;
-            target.focus();
-            const sel = window.getSelection();
-            if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-          } else {
-            // Fallback: Fokus ans Ende des Titels
-            tEl?.focus();
-          }
-        });
+        // Browser platziert Cursor natürlich an der Klickposition
       }
     });
 
