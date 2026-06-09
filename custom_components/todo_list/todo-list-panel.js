@@ -423,7 +423,7 @@ class TodoListPanel extends HTMLElement {
       bodyEl.contentEditable = 'true';
       // Gleiche DOM-Struktur wie Display-Modus (<div class="title-line">) vermeidet
       // Layout-Shift beim Klick. Leere Notizen bekommen <br> als Cursor-Landezone.
-      const notesHtml = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
+      const notesHtml = (todo.description ?? '').split('\n').map(l => this._renderNotesLineEdit(l)).join('<br>');
       bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml || '<br>'}`;
 
       if (!this._editEnteredByClick) {
@@ -452,9 +452,29 @@ class TodoListPanel extends HTMLElement {
     if (!bodyEl) return;
     const notesRaw = todo.description ?? '';
     const notesHtml = notesRaw
-      ? this._linkify(this._esc(notesRaw)).split('\n').join('<br>')
+      ? notesRaw.split('\n').map(l => this._renderNotesLineDisplay(l)).join('<br>')
       : '';
     bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
+  }
+
+  // Zeile für Edit-Modus rendern: ☐/☑ → klickbarer span (contenteditable=false)
+  _renderNotesLineEdit(line) {
+    if (line.startsWith('\u2610 ') || line.startsWith('\u2611 ')) {
+      const checked = line.startsWith('\u2611 ');
+      const text = this._esc(line.slice(2));
+      return `<span contenteditable="false" class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${text}`;
+    }
+    return this._esc(line);
+  }
+
+  // Zeile für Display-Modus rendern: ☐/☑ → klickbarer span + linkify
+  _renderNotesLineDisplay(line) {
+    if (line.startsWith('\u2610 ') || line.startsWith('\u2611 ')) {
+      const checked = line.startsWith('\u2611 ');
+      const text = this._linkify(this._esc(line.slice(2)));
+      return `<span class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${text}`;
+    }
+    return this._linkify(this._esc(line));
   }
 
   _showDuePopup() {
@@ -539,6 +559,22 @@ class TodoListPanel extends HTMLElement {
     } catch (e) {
       console.warn('_saveDue failed:', e);
     }
+  }
+
+  _insertCheckbox() {
+    // Edit-Modus aktivieren falls nötig
+    if (!this._detailEditMode) {
+      this._detailEditMode     = true;
+      this._editEnteredByClick = true;
+      this._renderDetailMode();
+    }
+    const bodyEl = this.shadowRoot.getElementById('detail-box-body');
+    if (!bodyEl) return;
+    bodyEl.focus();
+    // Checkbox-Span als HTML an Cursor-Position einfügen.
+    // Ein Leerzeichen dahinter als Text-Ankerpunkt für die Cursor-Platzierung.
+    document.execCommand('insertHTML', false,
+      '<span contenteditable="false" class="cb-box" data-checked="0">&#9744;</span>');
   }
 
   _showInfoPopup() {
@@ -2421,6 +2457,18 @@ class TodoListPanel extends HTMLElement {
           pointer-events: none;
         }
 
+        /* Checkboxen im Notizfeld */
+        .cb-box {
+          display: inline-block;
+          cursor: pointer;
+          user-select: none;
+          font-size: 1.1em;
+          line-height: 1;
+          padding: 0 2px 0 0;
+          vertical-align: baseline;
+        }
+        .cb-box:hover { opacity: 0.7; }
+
       </style>
 
       <!-- Slider-Wrapper: Liste links, Detail rechts -->
@@ -2493,6 +2541,7 @@ class TodoListPanel extends HTMLElement {
               <div class="detail-dropdown" id="detail-dropdown">
                 <button id="detail-info-btn">Info</button>
                 <button id="detail-due-btn">Fälligkeit</button>
+                <button id="detail-cb-btn">Checkbox</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2752,6 +2801,7 @@ class TodoListPanel extends HTMLElement {
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
     const infoBtn    = this.shadowRoot.getElementById('detail-info-btn');
     const dueBtn     = this.shadowRoot.getElementById('detail-due-btn');
+    const cbBtn      = this.shadowRoot.getElementById('detail-cb-btn');
 
     menuBtn.addEventListener('click', e => {
       e.stopPropagation();
@@ -2766,6 +2816,23 @@ class TodoListPanel extends HTMLElement {
     dueBtn.addEventListener('click', () => {
       dropdown.classList.remove('open');
       this._showDuePopup();
+    });
+
+    cbBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      this._insertCheckbox();
+    });
+
+    // Klick auf ☐/☑ span – Zustand umschalten und speichern
+    detailBox.addEventListener('click', e => {
+      const cb = e.target.closest('.cb-box');
+      if (!cb) return;
+      e.stopPropagation();
+      const checked = cb.dataset.checked === '1';
+      cb.dataset.checked = checked ? '0' : '1';
+      cb.textContent = checked ? '\u2610' : '\u2611';
+      // In beiden Modi sofort speichern
+      this._saveDetail();
     });
 
     deleteBtn.addEventListener('click', () => {
