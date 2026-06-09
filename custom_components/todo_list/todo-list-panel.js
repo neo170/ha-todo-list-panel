@@ -2481,12 +2481,11 @@ class TodoListPanel extends HTMLElement {
         .cb-box {
           display: inline-block;
           cursor: pointer;
-          user-select: none;
-          width: 1.25rem;
-          height: 1.25rem;
-          min-width: 1.25rem;
+          width: 1.7rem;
+          height: 1.7rem;
+          min-width: 1.7rem;
           border-radius: 50%;
-          border: 2px solid var(--primary-text-color, #666);
+          border: 2.5px solid var(--primary-text-color, #666);
           vertical-align: middle;
           margin-right: 3mm;
           font-size: 0;
@@ -2494,21 +2493,21 @@ class TodoListPanel extends HTMLElement {
           position: relative;
           box-sizing: border-box;
           background: transparent;
-          transition: background 0.15s, border-color 0.15s;
+          transition: border-color 0.15s;
         }
         .cb-box[data-checked="1"] {
-          background: #4caf50;
           border-color: #4caf50;
+          background: transparent;
         }
         .cb-box[data-checked="1"]::after {
           content: '';
           display: block;
           position: absolute;
-          left: 24%;
-          top: 10%;
-          width: 28%;
-          height: 52%;
-          border: 2.5px solid #fff;
+          left: 22%;
+          top: 12%;
+          width: 32%;
+          height: 55%;
+          border: 3px solid #4caf50;
           border-top: none;
           border-left: none;
           transform: rotate(42deg);
