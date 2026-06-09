@@ -458,14 +458,8 @@ class TodoListPanel extends HTMLElement {
     bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
   }
 
-  // Zeile für Edit-Modus rendern: ☐/☑ → klickbarer span (contenteditable=false)
+  // Zeile für Edit-Modus rendern: alles als Plain-Text (☐/☑ bleiben Unicode-Zeichen)
   _renderNotesLineEdit(line) {
-    const ch = line.charCodeAt(0);
-    if (ch === 0x2610 || ch === 0x2611) {
-      const checked = ch === 0x2611;
-      const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
-      return `<span contenteditable="false" class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${this._esc(rest)}`;
-    }
     return this._esc(line);
   }
 
@@ -575,39 +569,8 @@ class TodoListPanel extends HTMLElement {
     if (!bodyEl) return;
     bodyEl.focus();
 
-    // Cursor-Position bestimmen
-    const titleEl = bodyEl.querySelector('.title-line');
-    const sel = window.getSelection();
-    let insertRange = null;
-    if (sel && sel.rangeCount > 0) {
-      const r = sel.getRangeAt(0);
-      const anc = r.commonAncestorContainer;
-      const inBody = bodyEl.contains(anc);
-      const inTitle = titleEl ? titleEl.contains(anc) || anc === titleEl : false;
-      if (inBody && !inTitle) insertRange = r.cloneRange();
-    }
-    if (!insertRange) {
-      // Kein Cursor im Notizbereich → ans Ende setzen
-      insertRange = document.createRange();
-      insertRange.selectNodeContents(bodyEl);
-      insertRange.collapse(false);
-    }
-
-    // Span direkt als DOM-Node einfügen (zuverlässiger als execCommand insertHTML in Shadow DOM)
-    const span = document.createElement('span');
-    span.className = 'cb-box';
-    span.setAttribute('data-checked', '0');
-    span.setAttribute('contenteditable', 'false');
-    span.textContent = '\u2610'; // ☐
-    insertRange.deleteContents();
-    insertRange.insertNode(span);
-
-    // Cursor hinter dem Span platzieren
-    const after = document.createRange();
-    after.setStartAfter(span);
-    after.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(after);
+    // Im plaintext-only Modus einfach das Unicode-Zeichen einfügen
+    document.execCommand('insertText', false, '\u2610 ');
   }
 
   _showInfoPopup() {
