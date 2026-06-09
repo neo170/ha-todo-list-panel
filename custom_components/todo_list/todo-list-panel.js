@@ -572,26 +572,39 @@ class TodoListPanel extends HTMLElement {
     if (!bodyEl) return;
     bodyEl.focus();
 
-    // Sicherstellen, dass Cursor im Notiz-Bereich (nicht im Titel, nicht außerhalb)
+    // Cursor-Position bestimmen
     const titleEl = bodyEl.querySelector('.title-line');
     const sel = window.getSelection();
-    let cursorInNotes = false;
+    let insertRange = null;
     if (sel && sel.rangeCount > 0) {
-      const anc = sel.getRangeAt(0).commonAncestorContainer;
+      const r = sel.getRangeAt(0);
+      const anc = r.commonAncestorContainer;
       const inBody = bodyEl.contains(anc);
       const inTitle = titleEl ? titleEl.contains(anc) || anc === titleEl : false;
-      cursorInNotes = inBody && !inTitle;
+      if (inBody && !inTitle) insertRange = r.cloneRange();
     }
-    if (!cursorInNotes) {
-      // Cursor ans Ende des bodyEl setzen
-      const range = document.createRange();
-      range.selectNodeContents(bodyEl);
-      range.collapse(false);
-      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+    if (!insertRange) {
+      // Kein Cursor im Notizbereich → ans Ende setzen
+      insertRange = document.createRange();
+      insertRange.selectNodeContents(bodyEl);
+      insertRange.collapse(false);
     }
 
-    document.execCommand('insertHTML', false,
-      '<span contenteditable="false" class="cb-box" data-checked="0">&#9744;</span>');
+    // Span direkt als DOM-Node einfügen (zuverlässiger als execCommand insertHTML in Shadow DOM)
+    const span = document.createElement('span');
+    span.className = 'cb-box';
+    span.setAttribute('data-checked', '0');
+    span.setAttribute('contenteditable', 'false');
+    span.textContent = '\u2610'; // ☐
+    insertRange.deleteContents();
+    insertRange.insertNode(span);
+
+    // Cursor hinter dem Span platzieren
+    const after = document.createRange();
+    after.setStartAfter(span);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
   }
 
   _showInfoPopup() {
@@ -2481,36 +2494,32 @@ class TodoListPanel extends HTMLElement {
         .cb-box {
           display: inline-block;
           cursor: pointer;
-          width: 1.7rem;
-          height: 1.7rem;
-          min-width: 1.7rem;
+          width: 1.6rem;
+          height: 1.6rem;
+          min-width: 1.6rem;
           border-radius: 50%;
-          border: 2.5px solid var(--primary-text-color, #666);
+          border: 2px solid #999;
           vertical-align: middle;
           margin-right: 3mm;
-          font-size: 0;
-          line-height: 0;
+          font-size: 1px;
+          color: transparent;
+          line-height: 1.6rem;
           position: relative;
           box-sizing: border-box;
-          background: transparent;
-          transition: border-color 0.15s;
-        }
-        .cb-box[data-checked="1"] {
-          border-color: #4caf50;
           background: transparent;
         }
         .cb-box[data-checked="1"]::after {
           content: '';
           display: block;
           position: absolute;
-          left: 22%;
-          top: 12%;
-          width: 32%;
-          height: 55%;
-          border: 3px solid #4caf50;
+          left: 33%;
+          top: 16%;
+          width: 28%;
+          height: 50%;
+          border: 2.5px solid #4caf50;
           border-top: none;
           border-left: none;
-          transform: rotate(42deg);
+          transform: rotate(45deg);
           box-sizing: border-box;
         }
         .cb-box:hover { opacity: 0.72; }
