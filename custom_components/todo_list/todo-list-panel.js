@@ -209,6 +209,8 @@ class TodoListPanel extends HTMLElement {
     const text = this._newText.trim();
     if (!text || !this._selected) return;
     this._newText = '';
+    const notes   = this._pendingNotes || '';
+    this._pendingNotes = '';
     const inputEl = this.shadowRoot.getElementById('new-input');
     const addBtn  = this.shadowRoot.getElementById('add-btn');
     inputEl.value = '';
@@ -217,7 +219,11 @@ class TodoListPanel extends HTMLElement {
     try {
       // 1. Item anlegen (mit Timeout)
       await this._callWithTimeout(
-        this._hass.callService('todo', 'add_item', { entity_id: this._selected, item: text })
+        this._hass.callService('todo', 'add_item', {
+          entity_id:   this._selected,
+          item:        text,
+          ...(notes ? { description: notes } : {}),
+        })
       );
 
       // 2. Einmaliges Verschieben nach oben (für Google Tasks etc. brauchen wir die UID)
@@ -310,42 +316,22 @@ class TodoListPanel extends HTMLElement {
 
   async _saveDetail(closeAfter = false) {
     if (!this._isOnline()) return;
-    const todo    = this._detailTodo;
+    const todo = this._detailTodo;
     if (!todo) return;
-    const titleEl   = this.shadowRoot.getElementById('detail-title');
-    const notesEl   = this.shadowRoot.getElementById('detail-notes');
-    const dueDateEl = this.shadowRoot.getElementById('detail-due-date');
-    const dueTimeEl = this.shadowRoot.getElementById('detail-due-time');
-    const saveBtn   = this.shadowRoot.getElementById('detail-save');
-    const errEl     = this.shadowRoot.getElementById('detail-error');
 
-    const newTitle = titleEl.value.trim() || todo.summary;
-    const newNotes = notesEl.value;
-    const dateVal  = dueDateEl.value;  // "YYYY-MM-DD" oder ""
-    const timeVal  = dueTimeEl.value;  // "HH:MM" oder ""
+    const textarea = this.shadowRoot.getElementById('detail-textarea');
+    const rawText  = textarea ? textarea.value : '';
+    const lines    = rawText.split('\n');
+    const newTitle = lines[0].trim() || todo.summary;
+    const newNotes = lines.length > 1 ? lines.slice(1).join('\n').replace(/^\n+/, '') : '';
 
-    // HA erwartet due_date (nur Datum) oder due_datetime (ISO mit Zeit)
-    let duePayload = {};
-    if (dateVal && timeVal) {
-      duePayload = { due_datetime: `${dateVal}T${timeVal}:00` };
-    } else if (dateVal) {
-      duePayload = { due_date: dateVal };
-    } else {
-      // Datum explizit leeren: leeren String senden
-      duePayload = { due_date: null };
-    }
-
-    // Optimistisch: lokalen State sofort updaten & zurück zu Readonly
-    const newDue = dateVal
-      ? (timeVal ? `${dateVal}T${timeVal}:00` : dateVal)
-      : null;
+    // Optimistisch: lokalen State sofort updaten
     this._todos = this._todos.map(t =>
       t.uid === todo.uid
-        ? { ...t, summary: newTitle, description: newNotes, due: newDue }
+        ? { ...t, summary: newTitle, description: newNotes }
         : t
     );
-    // Detailtodo aktualisieren für Readonly-Ansicht
-    this._detailTodo = { ...todo, summary: newTitle, description: newNotes, due: newDue };
+    this._detailTodo     = { ...todo, summary: newTitle, description: newNotes };
     this._detailEditMode = false;
     if (closeAfter) { this._closeDetail(); } else { this._renderDetailMode(); }
     this._renderList();
@@ -358,18 +344,16 @@ class TodoListPanel extends HTMLElement {
           item:        todo.uid,
           rename:      newTitle,
           description: newNotes,
-          ...duePayload,
         })
       );
     } catch (e) {
-      console.warn('Full update failed, retrying without description/due:', e);
+      console.warn('Save failed, retrying without description:', e);
       try {
         await this._callWithTimeout(
           this._hass.callService('todo', 'update_item', {
             entity_id: this._selected,
             item:      todo.uid,
             rename:    newTitle,
-            ...duePayload,
           })
         );
       } catch (e2) {
@@ -395,10 +379,10 @@ class TodoListPanel extends HTMLElement {
     this._detailTodo = this._todos.find(t => t.uid === uid) ?? null;
     if (!this._detailTodo) return;
     const t = this._detailTodo;
-    // Edit nur wenn innerhalb der letzten 60s erstellt und keine Notiz/Due
-    const hasExtra = t.description || t.due;
+    // Edit-Modus direkt wenn kürzlich angelegt und noch kein Inhalt
+    const hasExtra = t.description;
     const createdAt = this._itemCreatedAt?.[uid];
-    const isRecent = createdAt && (Date.now() - createdAt < 20000);
+    const isRecent  = createdAt && (Date.now() - createdAt < 20000);
     this._detailEditMode = !hasExtra && isRecent;
     this._showDetail();
   }
@@ -406,8 +390,6 @@ class TodoListPanel extends HTMLElement {
   _enterEditMode() {
     this._detailEditMode = true;
     this._renderDetailMode();
-    // Fokus auf Titel
-    setTimeout(() => this.shadowRoot.getElementById('detail-title')?.focus(), 50);
   }
 
   _showDetail() {
@@ -417,112 +399,52 @@ class TodoListPanel extends HTMLElement {
       titleEl.innerHTML = `<ha-icon icon="${currentList.icon}"></ha-icon><span>${this._esc(currentList.name)}</span>`;
     }
     this.shadowRoot.getElementById('slider').classList.add('show-detail');
-    this.shadowRoot.getElementById('detail-panel').scrollTop = 0;
+    this.shadowRoot.getElementById('detail-content').scrollTop = 0;
     this._renderDetailMode();
   }
 
   _renderDetailMode() {
-    const todo = this._detailTodo;
-    const edit = this._detailEditMode;
-    const panel = this.shadowRoot.getElementById('detail-panel');
-
-    // Header-Buttons
-    const editBtn  = this.shadowRoot.getElementById('detail-edit-btn');
-    const saveBtn  = this.shadowRoot.getElementById('detail-save');
-    editBtn.style.display = edit ? 'none' : '';
-    saveBtn.style.display = edit ? '' : 'none';
-
-    // Readonly View vs Edit View
-    panel.querySelector('.detail-readonly').style.display = edit ? 'none' : '';
-    panel.querySelector('.detail-editform').style.display = edit ? '' : 'none';
+    const todo     = this._detailTodo;
+    const edit     = this._detailEditMode;
+    const display  = this.shadowRoot.getElementById('detail-display');
+    const textarea = this.shadowRoot.getElementById('detail-textarea');
+    if (!display || !textarea) return;
 
     if (edit) {
-      // Edit-Felder befüllen
-      this.shadowRoot.getElementById('detail-title').value = todo.summary ?? '';
-      this.shadowRoot.getElementById('detail-notes').value = todo.description ?? '';
-      const dueDate = this.shadowRoot.getElementById('detail-due-date');
-      const dueTime = this.shadowRoot.getElementById('detail-due-time');
-      if (todo.due) {
-        const hasTime = todo.due.includes('T');
-        if (hasTime) {
-          const [d, t2] = todo.due.split('T');
-          dueDate.value = d;
-          dueTime.value = t2.slice(0, 5);
-        } else {
-          dueDate.value = todo.due;
-          dueTime.value = '';
-        }
-      } else {
-        dueDate.value = '';
-        dueTime.value = '';
-      }
-      this.shadowRoot.getElementById('detail-error').style.display = 'none';
-
-      // Erstellt-Datum im Edit-Modus anzeigen
-      const editModified = this.shadowRoot.getElementById('edit-modified');
-      const editModifiedSection = this.shadowRoot.getElementById('edit-modified-section');
-      const uuidCreatedEdit = (() => {
-        const m = /^([0-9a-f]{8})-([0-9a-f]{4})-(1)([0-9a-f]{3})-/i.exec(todo.uid ?? '');
-        if (!m) return null;
-        const hi = parseInt(m[4] + m[2] + m[1], 16);
-        const ms = Math.floor((hi - 122192928000000000) / 10000);
-        return new Date(ms);
-      })();
-      if (editModifiedSection) {
-        if (uuidCreatedEdit && !isNaN(uuidCreatedEdit)) {
-          editModified.textContent = uuidCreatedEdit.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
-          editModifiedSection.style.display = '';
-        } else {
-          editModifiedSection.style.display = 'none';
-        }
-      }
+      // Textarea befüllen: erste Zeile = Titel, Rest = Notizen
+      const fullText = todo.description
+        ? `${todo.summary ?? ''}\n${todo.description}`
+        : (todo.summary ?? '');
+      textarea.value = fullText;
+      display.style.display  = 'none';
+      textarea.style.display = '';
+      this._autoResizeTextarea(textarea);
+      setTimeout(() => {
+        textarea.focus();
+        // Cursor ans Ende
+        textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+      }, 30);
     } else {
-      // Readonly View befüllen
-      this.shadowRoot.getElementById('view-title').textContent = todo.summary ?? '';
-
-      // Notizen mit klickbaren Links
-      const viewNotes = this.shadowRoot.getElementById('view-notes');
-      if (todo.description) {
-        viewNotes.innerHTML = this._linkify(this._esc(todo.description));
-        viewNotes.parentElement.style.display = '';
-      } else {
-        viewNotes.parentElement.style.display = 'none';
-      }
-
-      // Fälligkeitsdatum
-      const viewDue = this.shadowRoot.getElementById('view-due');
-      if (todo.due) {
-        const hasTime = todo.due.includes('T');
-        if (hasTime) {
-          const [d, t2] = todo.due.split('T');
-          const dt = new Date(`${d}T${t2}`);
-          viewDue.textContent = dt.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
-        } else {
-          const dt = new Date(todo.due + 'T00:00:00');
-          viewDue.textContent = dt.toLocaleDateString('de-DE', { dateStyle: 'medium' });
-        }
-        viewDue.parentElement.style.display = '';
-      } else {
-        viewDue.parentElement.style.display = 'none';
-      }
-
-      // Erstelldatum aus UUID v1
-      const viewModified = this.shadowRoot.getElementById('view-modified');
-      const uuidCreated = (() => {
-        const m = /^([0-9a-f]{8})-([0-9a-f]{4})-(1)([0-9a-f]{3})-/i.exec(todo.uid ?? '');
-        if (!m) return null;
-        // UUID v1: 100ns-Intervalle seit 15. Okt 1582
-        const hi = parseInt(m[4] + m[2] + m[1], 16);
-        const ms = Math.floor((hi - 122192928000000000) / 10000);
-        return new Date(ms);
-      })();
-      if (uuidCreated && !isNaN(uuidCreated)) {
-        viewModified.textContent = uuidCreated.toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
-        viewModified.parentElement.style.display = '';
-      } else {
-        viewModified.parentElement.style.display = 'none';
-      }
+      // Display: Titel fett/groß, Notizen mit klickbaren Links
+      textarea.style.display = 'none';
+      display.style.display  = '';
+      this._renderDisplay(todo);
     }
+  }
+
+  _renderDisplay(todo) {
+    const display = this.shadowRoot.getElementById('detail-display');
+    if (!display) return;
+    const titleHtml = `<div class="display-title">${this._esc(todo.summary ?? '')}</div>`;
+    const notesHtml = todo.description
+      ? `<div class="display-notes">${this._linkify(this._esc(todo.description))}</div>`
+      : '';
+    display.innerHTML = titleHtml + notesHtml;
+  }
+
+  _autoResizeTextarea(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = (ta.scrollHeight) + 'px';
   }
 
   // URLs in Text erkennen und als Links rendern
@@ -2297,170 +2219,64 @@ class TodoListPanel extends HTMLElement {
           margin: 0 auto;
           display: flex;
           flex-direction: column;
-          gap: 1rem;
+          gap: 0;
         }
 
-        .detail-editform {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
+        /* Display-Ansicht (Lese-Modus) */
+        .detail-display-view {
+          cursor: text;
+          padding: 0.75rem 0.9rem;
+          border-radius: 10px;
+          border: 1.5px solid transparent;
+          min-height: 6rem;
+          word-break: break-word;
+          box-sizing: border-box;
+          transition: border-color 0.15s, background 0.15s;
+        }
+        .detail-display-view:hover {
+          border-color: var(--divider-color, #ddd);
+          background: var(--card-background-color, #fff);
         }
 
-        .detail-field label {
-          display: block;
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: var(--secondary-text-color, #666);
-          margin-bottom: 0.4rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
+        .display-title {
+          font-size: 1.35rem;
+          font-weight: 700;
+          color: var(--primary-text-color, #222);
+          line-height: 1.3;
+          margin-bottom: 0.6rem;
+          word-break: break-word;
         }
 
-        .detail-field input,
-        .detail-field textarea {
+        .display-notes {
+          font-size: 1rem;
+          color: var(--primary-text-color, #333);
+          line-height: 1.6;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+
+        .display-notes a {
+          color: #1976d2;
+          text-decoration: underline;
+          word-break: break-all;
+        }
+
+        /* Unified Textarea (Bearbeitungs-Modus) */
+        .detail-textarea {
           width: 100%;
           padding: 0.75rem 0.9rem;
           border-radius: 10px;
-          border: 1.5px solid var(--divider-color, #ddd);
+          border: 1.5px solid #1976d2;
           font-size: 1rem;
           font-family: inherit;
           background: var(--card-background-color, #fff);
           color: var(--primary-text-color, #333);
           outline: none;
-          transition: border-color 0.2s;
           resize: none;
-          min-height: 3rem;
+          overflow: hidden;
+          min-height: 6rem;
           box-sizing: border-box;
-        }
-
-        .detail-field input:focus,
-        .detail-field textarea:focus { border-color: #1976d2; }
-
-        .detail-field textarea {
-          min-height: 320px;
           line-height: 1.6;
-        }
-
-        /* Datum + Uhrzeit nebeneinander */
-        .due-row {
-          display: flex;
-          gap: 0.6rem;
-        }
-
-        .due-row .detail-field { flex: 1; }
-
-        /* Datum/Zeit-Input: Kalender-Icon in HA-Farbe */
-        .detail-field input[type="date"],
-        .detail-field input[type="time"] {
-          -webkit-appearance: none;
-          appearance: none;
-          color-scheme: light;
-          min-height: 3rem;
-          /* Sicherstellen dass leere Felder gleich hoch sind wie befüllte */
-          min-width: 0;
-        }
-
-        /* Placeholder-Farbe für leere date/time Inputs (iOS zeigt sonst nichts) */
-        .detail-field input[type="date"]:not(:valid),
-        .detail-field input[type="time"]:not(:valid) {
-          color: var(--secondary-text-color, #aaa);
-        }
-
-        /* Clear-Button neben Datum */
-        .due-clear-btn {
-          background: none;
-          border: none;
-          color: var(--secondary-text-color, #aaa);
-          font-size: 1.1rem;
-          cursor: pointer;
-          padding: 0.4rem;
-          align-self: flex-end;
-          margin-bottom: 0.15rem;
-          border-radius: 6px;
-          transition: color 0.15s;
-          flex-shrink: 0;
-        }
-        .due-clear-btn:hover { color: #e53935; }
-
-        #detail-due-hint {
-          font-size: 0.78rem;
-          color: var(--secondary-text-color, #999);
-          margin-top: -0.4rem;
-        }
-
-        .detail-btn-row {
-          display: flex;
-          gap: 0.75rem;
-        }
-        .detail-save-btn {
-          background: linear-gradient(135deg, #1976d2, #42a5f5);
-          color: #fff;
-          border: none;
-          border-radius: 12px;
-          padding: 0.85rem;
-          font-size: 1rem;
-          font-weight: 600;
-          cursor: pointer;
-          flex: 1;
-          transition: opacity 0.2s;
-        }
-        .detail-save-btn:disabled { opacity: 0.5; cursor: default; }
-        .detail-save-btn:active { opacity: 0.85; }
-        .detail-cancel-btn {
-          background: var(--secondary-background-color, #f0f0f0);
-          color: var(--primary-text-color, #333);
-          border: none;
-          border-radius: 12px;
-          padding: 0.85rem 1.2rem;
-          font-size: 1rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: opacity 0.2s;
-        }
-        .detail-cancel-btn:active { opacity: 0.7; }
-
-        /* ── Readonly View ── */
-        .detail-readonly {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-        }
-
-        .view-title {
-          font-size: 1.35rem;
-          font-weight: 700;
-          color: var(--primary-text-color, #222);
-          line-height: 1.3;
-          word-break: break-word;
-        }
-
-        .view-section-value {
-          font-size: 1rem;
-          color: var(--primary-text-color, #333);
-          line-height: 1.6;
-          word-break: break-word;
-          white-space: pre-wrap;
-          padding: 0.75rem 0.9rem;
-          border-radius: 10px;
-          border: 1.5px solid var(--divider-color, #ddd);
-          background: var(--card-background-color, #fff);
-          box-sizing: border-box;
-        }
-
-        .view-modified-value {
-          font-size: 1rem;
-          color: var(--secondary-text-color, #888);
-          padding: 0.75rem 0.9rem;
-          border-radius: 10px;
-          border: 1.5px solid var(--divider-color, #ddd);
-          background: var(--card-background-color, #fff);
-          box-sizing: border-box;
-        }
-
-        .view-section-value a {
-          color: #1976d2;
-          text-decoration: underline;
-          word-break: break-all;
         }
 
       </style>
@@ -2528,9 +2344,6 @@ class TodoListPanel extends HTMLElement {
           </ha-icon-button>
           <span class="detail-header-title" id="detail-header-title"></span>
           <div class="header-actions">
-            <ha-icon-button id="detail-edit-btn" label="Bearbeiten" style="display:none">
-              <ha-icon icon="mdi:pencil"></ha-icon>
-            </ha-icon-button>
             <div class="detail-menu-wrap">
               <ha-icon-button id="detail-menu-btn" label="Mehr">
                 <ha-icon icon="mdi:dots-vertical"></ha-icon>
@@ -2542,57 +2355,10 @@ class TodoListPanel extends HTMLElement {
           </div>
         </div>
 
-        <div class="detail-content">
-
-          <!-- ── Readonly-Ansicht ── -->
-          <div class="detail-readonly">
-            <div class="view-title" id="view-title"></div>
-            <div class="detail-field" id="view-notes-section" style="display:none">
-              <label>Notizen</label>
-              <div class="view-section-value" id="view-notes"></div>
-            </div>
-            <div class="detail-field" id="view-due-section" style="display:none">
-              <label>Fälligkeit</label>
-              <div class="view-section-value" id="view-due"></div>
-            </div>
-            <div class="detail-field" id="view-modified-section" style="display:none">
-              <label>Erstellt</label>
-              <div class="view-section-value view-modified-value" id="view-modified"></div>
-            </div>
-          </div>
-
-          <!-- ── Bearbeitungsformular ── -->
-          <div class="detail-editform">
-            <div class="detail-field">
-              <label>Titel</label>
-              <input id="detail-title" type="text" />
-            </div>
-            <div class="detail-field">
-              <label>Notizen</label>
-              <textarea id="detail-notes" placeholder="Zusatzinformationen eingeben…"></textarea>
-            </div>
-            <div class="due-row">
-              <div class="detail-field">
-                <label>Fälligkeitsdatum</label>
-                <input id="detail-due-date" type="date" />
-              </div>
-              <div class="detail-field">
-                <label>Uhrzeit</label>
-                <input id="detail-due-time" type="time" />
-              </div>
-              <button class="due-clear-btn" id="detail-due-clear" title="Datum löschen">✕</button>
-            </div>
-            <div id="detail-error" style="display:none;color:#c62828;background:#ffebee;border-radius:8px;padding:0.6rem 0.9rem;font-size:0.88rem;margin-bottom:0.5rem;"></div>
-            <div class="detail-field" id="edit-modified-section" style="display:none">
-              <label>Erstellt</label>
-              <div class="view-section-value view-modified-value" id="edit-modified"></div>
-            </div>
-            <div class="detail-btn-row">
-              <button class="detail-save-btn" id="detail-save">Speichern</button>
-              <button class="detail-cancel-btn" id="detail-cancel">Abbruch</button>
-            </div>
-          </div>
-
+        <div class="detail-content" id="detail-content">
+          <!-- Unified content: Display-Modus (klickbar) ODER Textarea (Bearbeitung) -->
+          <div id="detail-display" class="detail-display-view"></div>
+          <textarea id="detail-textarea" class="detail-textarea" style="display:none;" placeholder="Erste Zeile = Titel&#10;Zweite Zeile = Notiz…"></textarea>
         </div>
       </div>
 
@@ -2626,6 +2392,23 @@ class TodoListPanel extends HTMLElement {
     });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') this._addTodo(); });
     addBtn.addEventListener('click', () => this._addTodo());
+
+    // Mehrzeiliges Paste → erste Zeile = Titel, Rest = Notiz
+    input.addEventListener('paste', e => {
+      const text = e.clipboardData?.getData('text') ?? '';
+      if (text.includes('\n')) {
+        e.preventDefault();
+        const lines = text.split('\n');
+        const title = lines[0].trim();
+        const notes = lines.slice(1).join('\n').replace(/^\n+/, '');
+        input.value      = title;
+        this._newText    = title;
+        this._pendingNotes = notes;
+        addBtn.disabled  = !title;
+      } else {
+        this._pendingNotes = '';
+      }
+    });
 
     this.shadowRoot.getElementById('menu-btn').addEventListener('click', () => {
       this.dispatchEvent(new CustomEvent('hass-toggle-menu', { bubbles: true, composed: true }));
@@ -2750,21 +2533,25 @@ class TodoListPanel extends HTMLElement {
         this._closeDetail();
       }
     });
-    this.shadowRoot.getElementById('detail-edit-btn').addEventListener('click', () => this._enterEditMode());
-    this.shadowRoot.getElementById('detail-save').addEventListener('click', () => this._saveDetail());
-    this.shadowRoot.getElementById('detail-cancel').addEventListener('click', () => {
-      if (this._detailTodo?.description || this._detailTodo?.due) {
-        // Hat bereits Daten → zurück zur Readonly-Ansicht
-        this._detailEditMode = false;
+
+    // Display-Fläche anklicken → Edit-Modus (Textarea)
+    this.shadowRoot.getElementById('detail-display').addEventListener('click', () => {
+      if (!this._detailEditMode) {
+        this._detailEditMode = true;
         this._renderDetailMode();
-      } else {
-        // Neuer Eintrag ohne Daten → Detail schließen
-        this._closeDetail();
       }
     });
-    this.shadowRoot.getElementById('detail-due-clear').addEventListener('click', () => {
-      this.shadowRoot.getElementById('detail-due-date').value = '';
-      this.shadowRoot.getElementById('detail-due-time').value = '';
+
+    // Textarea: Blur → Auto-Speichern + zurück zur Display-Ansicht
+    const detailTextarea = this.shadowRoot.getElementById('detail-textarea');
+    detailTextarea.addEventListener('blur', () => {
+      if (this._detailEditMode) {
+        this._saveDetail();
+      }
+    });
+    // Auto-Resize beim Tippen
+    detailTextarea.addEventListener('input', () => {
+      this._autoResizeTextarea(detailTextarea);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
