@@ -3172,7 +3172,12 @@ class TodoListPanel extends HTMLElement {
            data-uid="${todo.uid}" data-status="${todo.status}"></div>
       <div class="todo-body">
         <div class="todo-text ${todo.status === 'completed' ? 'done' : ''}">${this._esc(todo.summary)}</div>
-        ${todo.description && !todo.due ? `<div class="todo-note-preview">${this._esc(todo.description)}</div>` : ''}
+        ${todo.description && !todo.due ? (() => {
+          const lines = todo.description.split('\n');
+          const first = lines[0].trim();
+          const hasMore = lines.length > 1 && lines.slice(1).some(l => l.trim());
+          return first ? `<div class="todo-note-preview">${this._esc(first)}${hasMore ? '\u2026' : ''}</div>` : '';
+        })() : ''}
         ${todo.due         ? `<div class="due-date">📅 ${todo.due}</div>` : ''}
       </div>
       <span class="chevron">›</span>
