@@ -571,8 +571,25 @@ class TodoListPanel extends HTMLElement {
     const bodyEl = this.shadowRoot.getElementById('detail-box-body');
     if (!bodyEl) return;
     bodyEl.focus();
-    // Checkbox-Span als HTML an Cursor-Position einfügen.
-    // Ein Leerzeichen dahinter als Text-Ankerpunkt für die Cursor-Platzierung.
+
+    // Sicherstellen, dass Cursor im Notiz-Bereich (nicht im Titel, nicht außerhalb)
+    const titleEl = bodyEl.querySelector('.title-line');
+    const sel = window.getSelection();
+    let cursorInNotes = false;
+    if (sel && sel.rangeCount > 0) {
+      const anc = sel.getRangeAt(0).commonAncestorContainer;
+      const inBody = bodyEl.contains(anc);
+      const inTitle = titleEl ? titleEl.contains(anc) || anc === titleEl : false;
+      cursorInNotes = inBody && !inTitle;
+    }
+    if (!cursorInNotes) {
+      // Cursor ans Ende des bodyEl setzen
+      const range = document.createRange();
+      range.selectNodeContents(bodyEl);
+      range.collapse(false);
+      if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+    }
+
     document.execCommand('insertHTML', false,
       '<span contenteditable="false" class="cb-box" data-checked="0">&#9744;</span>');
   }
@@ -2462,12 +2479,39 @@ class TodoListPanel extends HTMLElement {
           display: inline-block;
           cursor: pointer;
           user-select: none;
-          font-size: 1.1em;
-          line-height: 1;
-          padding: 0 2px 0 0;
-          vertical-align: baseline;
+          width: 1.25rem;
+          height: 1.25rem;
+          min-width: 1.25rem;
+          border-radius: 50%;
+          border: 2px solid var(--primary-text-color, #666);
+          vertical-align: middle;
+          margin-right: 3mm;
+          font-size: 0;
+          line-height: 0;
+          position: relative;
+          box-sizing: border-box;
+          background: transparent;
+          transition: background 0.15s, border-color 0.15s;
         }
-        .cb-box:hover { opacity: 0.7; }
+        .cb-box[data-checked="1"] {
+          background: #4caf50;
+          border-color: #4caf50;
+        }
+        .cb-box[data-checked="1"]::after {
+          content: '';
+          display: block;
+          position: absolute;
+          left: 24%;
+          top: 10%;
+          width: 28%;
+          height: 52%;
+          border: 2.5px solid #fff;
+          border-top: none;
+          border-left: none;
+          transform: rotate(42deg);
+          box-sizing: border-box;
+        }
+        .cb-box:hover { opacity: 0.72; }
 
       </style>
 
