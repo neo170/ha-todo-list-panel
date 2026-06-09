@@ -463,15 +463,13 @@ class TodoListPanel extends HTMLElement {
     return this._esc(line);
   }
 
-  // Zeile für Display-Modus rendern: ☐/☑ → klickbarer span + linkify
+  // Zeile für Display-Modus rendern: ALLE ☐/☑ → klickbarer span + linkify
   _renderNotesLineDisplay(line) {
-    const ch = line.charCodeAt(0);
-    if (ch === 0x2610 || ch === 0x2611) {
-      const checked = ch === 0x2611;
-      const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
-      return `<span class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${this._linkify(this._esc(rest))}`;
-    }
-    return this._linkify(this._esc(line));
+    // Erst escapen, dann alle ☐/☑ durch Spans ersetzen
+    let html = this._esc(line);
+    html = html.replace(/\u2611/g, '<span class="cb-box" data-checked="1">\u2611</span>');
+    html = html.replace(/\u2610/g, '<span class="cb-box" data-checked="0">\u2610</span>');
+    return this._linkify(html);
   }
 
   _showDuePopup() {
