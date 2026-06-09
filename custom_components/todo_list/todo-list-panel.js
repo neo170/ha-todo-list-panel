@@ -2822,8 +2822,16 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup', e => e.stopImmediatePropagation());
 
-    // Kein Paste-Handler nötig: contenteditable="plaintext-only" sorgt dafür dass
-    // der Browser Paste nativ als plain text an der Cursor-Position einfügt.
+    // Paste-Fallback für Browser die plaintext-only nicht unterstützen (Firefox):
+    // Prüfen ob plaintext-only aktiv ist. Wenn nicht → plain text via execCommand einfügen.
+    bodyEl.addEventListener('paste', e => {
+      // Wenn plaintext-only unterstützt wird, macht der Browser alles nativ richtig
+      if (bodyEl.contentEditable === 'plaintext-only') return;
+      e.preventDefault();
+      const text = (e.clipboardData.getData('text/plain') || '')
+        .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      document.execCommand('insertText', false, text);
+    });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
