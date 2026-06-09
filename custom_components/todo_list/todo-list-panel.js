@@ -459,20 +459,22 @@ class TodoListPanel extends HTMLElement {
 
   // Zeile für Edit-Modus rendern: ☐/☑ → klickbarer span (contenteditable=false)
   _renderNotesLineEdit(line) {
-    if (line.startsWith('\u2610 ') || line.startsWith('\u2611 ')) {
-      const checked = line.startsWith('\u2611 ');
-      const text = this._esc(line.slice(2));
-      return `<span contenteditable="false" class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${text}`;
+    const ch = line.charCodeAt(0);
+    if (ch === 0x2610 || ch === 0x2611) {
+      const checked = ch === 0x2611;
+      const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
+      return `<span contenteditable="false" class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${this._esc(rest)}`;
     }
     return this._esc(line);
   }
 
   // Zeile für Display-Modus rendern: ☐/☑ → klickbarer span + linkify
   _renderNotesLineDisplay(line) {
-    if (line.startsWith('\u2610 ') || line.startsWith('\u2611 ')) {
-      const checked = line.startsWith('\u2611 ');
-      const text = this._linkify(this._esc(line.slice(2)));
-      return `<span class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${text}`;
+    const ch = line.charCodeAt(0);
+    if (ch === 0x2610 || ch === 0x2611) {
+      const checked = ch === 0x2611;
+      const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
+      return `<span class="cb-box" data-checked="${checked ? '1' : '0'}">${checked ? '\u2611' : '\u2610'}</span>${this._linkify(this._esc(rest))}`;
     }
     return this._linkify(this._esc(line));
   }
@@ -2786,6 +2788,7 @@ class TodoListPanel extends HTMLElement {
     // den Cursor nach unserem synchronen DOM-Update an der Klickposition setzt.
     const detailBox = this.shadowRoot.getElementById('detail-box');
     detailBox.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.cb-box')) return; // Checkbox-Klick → kein Edit-Modus
       if (!this._detailEditMode) {
         this._detailEditMode     = true;
         this._editEnteredByClick = true;
@@ -2838,6 +2841,8 @@ class TodoListPanel extends HTMLElement {
       e.preventDefault();
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      // Checkbox-Zeichen normalisieren: ☐/☑ brauchen exakt ein Leerzeichen danach
+      text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
       const titleEl2 = bodyEl.querySelector('.title-line');
       const sel = window.getSelection();
       const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
