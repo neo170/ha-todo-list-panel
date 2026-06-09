@@ -2591,28 +2591,24 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: nur Plain Text; im Titel-Span nur erste Zeile
+    // Paste: nur Plain Text; im Titel nur erste Zeile.
+    // execCommand wirkt immer auf das fokussierte contenteditable – sicherer als
+    // range.insertNode() das im Shadow DOM auf den falschen Container zeigen kann.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       const titleEl2 = bodyEl.querySelector('.title-line');
       const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return;
-      const range = sel.getRangeAt(0);
-      const inTitle = titleEl2 && (titleEl2.contains(range.startContainer) || titleEl2 === range.startContainer);
+      const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+      const inTitle = range && titleEl2 &&
+        (titleEl2.contains(range.startContainer) || titleEl2 === range.startContainer);
       if (inTitle) text = text.split('\n')[0];
-      range.deleteContents();
       const lines = text.split('\n');
-      const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
-        if (i > 0) frag.appendChild(document.createElement('br'));
-        if (line) frag.appendChild(document.createTextNode(line));
+        if (i > 0) document.execCommand('insertLineBreak');
+        if (line) document.execCommand('insertText', false, line);
       });
-      range.insertNode(frag);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
