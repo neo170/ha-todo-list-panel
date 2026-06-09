@@ -568,8 +568,18 @@ class TodoListPanel extends HTMLElement {
     if (!bodyEl) return;
     bodyEl.focus();
 
-    // Im plaintext-only Modus einfach das Unicode-Zeichen einfügen
-    document.execCommand('insertText', false, '\u2610 ');
+    // Cursor ans Ende setzen (nach Render ist er sonst am Anfang/vor Titel)
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      range.selectNodeContents(bodyEl);
+      range.collapse(false); // Ende
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Neue Zeile + Checkbox einfügen
+    document.execCommand('insertText', false, '\n\u2610 ');
   }
 
   _showInfoPopup() {
