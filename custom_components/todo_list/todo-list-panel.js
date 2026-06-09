@@ -449,10 +449,11 @@ class TodoListPanel extends HTMLElement {
   _ceToText(el) {
     const tmp = document.createElement('div');
     tmp.innerHTML = el.innerHTML
-      .replace(/<\/div>/gi, '\n')
-      .replace(/<div>/gi, '')
-      .replace(/<br\s*\/?>/gi, '\n');
-    return (tmp.textContent || '').replace(/\n+$/, '');
+      .replace(/<div><br\s*\/?><\/div>/gi, '\n')  // leeres div = eine Leerzeile
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/div>/gi, '')
+      .replace(/<div>/gi, '\n');                   // div-Beginn = Zeilenumbruch
+    return (tmp.textContent || '').replace(/^\n/, '').replace(/\n+$/, '');
   }
 
   // URLs in Text erkennen und als Links rendern
@@ -2577,12 +2578,27 @@ class TodoListPanel extends HTMLElement {
     });
 
     // Paste: nur Plain Text; im Titel nur erste Zeile
+    // Zeilenenden normalisieren, dann sauber als DOM-Fragment einfügen (konsistente <br>-Elemente)
     [boxTitle, boxNotes].forEach(el => {
       el.addEventListener('paste', e => {
         e.preventDefault();
-        const text = e.clipboardData.getData('text/plain');
-        const insert = el === boxTitle ? text.split('\n')[0] : text;
-        document.execCommand('insertText', false, insert);
+        let text = (e.clipboardData.getData('text/plain') || '')
+          .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        if (el === boxTitle) text = text.split('\n')[0];
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount) return;
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const lines = text.split('\n');
+        const frag = document.createDocumentFragment();
+        lines.forEach((line, i) => {
+          if (i > 0) frag.appendChild(document.createElement('br'));
+          if (line) frag.appendChild(document.createTextNode(line));
+        });
+        range.insertNode(frag);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
       });
     });
 
