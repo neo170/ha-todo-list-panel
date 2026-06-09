@@ -2514,6 +2514,7 @@ class TodoListPanel extends HTMLElement {
           border: 2px solid #999;
           vertical-align: middle;
           margin-right: 3mm;
+          margin-top: 2mm;
           font-size: 1px;
           color: transparent;
           line-height: 1.6rem;
