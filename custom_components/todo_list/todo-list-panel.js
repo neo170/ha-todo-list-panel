@@ -2814,6 +2814,17 @@ class TodoListPanel extends HTMLElement {
     // Tastatur: HA-Assist-Intercept + Enter-Verhalten
     bodyEl.addEventListener('keydown', e => {
       e.stopImmediatePropagation();
+      // Ctrl+V: Range JETZT sichern – keydown feuert vor paste, Selection ist noch intakt
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        const s = window.getSelection();
+        if (s && s.rangeCount > 0) {
+          const r = s.getRangeAt(0);
+          const n = r.startContainer;
+          if (n === bodyEl || bodyEl.contains(n)) {
+            this._pendingPasteRange = r.cloneRange();
+          }
+        }
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
         const titleEl = bodyEl.querySelector('.title-line');
@@ -2821,14 +2832,11 @@ class TodoListPanel extends HTMLElement {
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
         if (titleEl && (titleEl.contains(range.startContainer) || titleEl === range.startContainer)) {
-          // Im Titel-Div: Cursor direkt nach dem Div verschieben (Beginn der Notizen).
-          // Da <br> oder Text nach dem Div existiert, ist setStartAfter immer gültig.
           range.setStartAfter(titleEl);
           range.collapse(true);
           sel.removeAllRanges();
           sel.addRange(range);
         } else {
-          // In Notizen: browsereigenes insertLineBreak-Kommando
           document.execCommand('insertLineBreak');
         }
       }
@@ -2836,23 +2844,9 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Cursor-Position persistent tracken: selectionchange speichert die letzte
-    // gültige Range in bodyEl, damit paste-Event sie zuverlässig nutzen kann.
-    document.addEventListener('selectionchange', () => {
-      const s = window.getSelection();
-      if (!s || !s.rangeCount) return;
-      const r = s.getRangeAt(0);
-      const n = r.startContainer;
-      if (n === bodyEl || bodyEl.contains(n)) {
-        this._lastBodyRange = r.cloneRange();
-      }
-    });
-
-    // Paste: _lastBodyRange nutzen (vom selectionchange gespeichert),
-    // Fallback: Ende der Notiz.
+    // Paste: _pendingPasteRange (aus keydown) nutzen, Fallback Ende der Notiz.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
-      e.stopPropagation();
 
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -2860,15 +2854,15 @@ class TodoListPanel extends HTMLElement {
 
       const titleEl2 = bodyEl.querySelector('.title-line');
 
-      // Gespeicherte Range verwenden
+      // Range aus keydown verwenden (zuverlässigstes Timing)
       let pasteRange = null;
-      if (this._lastBodyRange) {
+      const pending = this._pendingPasteRange;
+      this._pendingPasteRange = null;
+      if (pending) {
         try {
-          const n = this._lastBodyRange.startContainer;
-          if (n === bodyEl || bodyEl.contains(n)) {
-            pasteRange = this._lastBodyRange.cloneRange();
-          }
-        } catch (_) { pasteRange = null; }
+          const n = pending.startContainer;
+          if (n === bodyEl || bodyEl.contains(n)) pasteRange = pending;
+        } catch (_) {}
       }
       if (!pasteRange) {
         pasteRange = document.createRange();
@@ -2882,6 +2876,7 @@ class TodoListPanel extends HTMLElement {
 
       pasteRange.deleteContents();
 
+      // Fragment: ☐/☑ → sofort als styled cb-box Span, Rest als Textknoten
       const lines = text.split('\n');
       const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
@@ -2894,7 +2889,7 @@ class TodoListPanel extends HTMLElement {
           span.setAttribute('data-checked', ch === 0x2611 ? '1' : '0');
           span.textContent = ch === 0x2611 ? '\u2611' : '\u2610';
           frag.appendChild(span);
-          const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
+          const rest = line[1] === ' ' ? line.slice(2) : line.slice(1);
           if (rest) frag.appendChild(document.createTextNode(rest));
         } else {
           if (line) frag.appendChild(document.createTextNode(line));
@@ -2904,8 +2899,7 @@ class TodoListPanel extends HTMLElement {
       pasteRange.insertNode(frag);
       pasteRange.collapse(false);
       const sel2 = window.getSelection();
-      sel2.removeAllRanges();
-      sel2.addRange(pasteRange);
+      if (sel2) { sel2.removeAllRanges(); sel2.addRange(pasteRange); }
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
