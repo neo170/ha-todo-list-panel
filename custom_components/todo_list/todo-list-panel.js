@@ -2834,27 +2834,43 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: nur Plain Text; im Titel nur erste Zeile.
-    // execCommand wirkt immer auf das fokussierte contenteditable – sicherer als
-    // range.insertNode() das im Shadow DOM auf den falschen Container zeigen kann.
+    // Paste: Plain Text an exakter Cursor-Position einfügen.
+    // range.insertNode() ist zuverlässiger als execCommand wenn contenteditable="false"
+    // Spans im ContentEditable sind (execCommand verliert dort den Cursor-Kontext).
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       // Checkbox-Zeichen normalisieren: ☐/☑ brauchen exakt ein Leerzeichen danach
       text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
+
       const titleEl2 = bodyEl.querySelector('.title-line');
       const sel = window.getSelection();
-      const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
-      const inTitle = range && titleEl2 &&
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+
+      // Im Titel nur erste Zeile erlauben
+      const inTitle = titleEl2 &&
         (titleEl2.contains(range.startContainer) || titleEl2 === range.startContainer);
       if (inTitle) text = text.split('\n')[0];
+
+      // Selektion löschen, dann Fragment an Cursor-Position einfügen
+      range.deleteContents();
       const lines = text.split('\n');
+      const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
-        if (i > 0) document.execCommand('insertLineBreak');
-        if (line) document.execCommand('insertText', false, line);
+        if (i > 0) frag.appendChild(document.createElement('br'));
+        if (line) frag.appendChild(document.createTextNode(line));
       });
+      range.insertNode(frag);
+      // Cursor ans Ende des eingefügten Inhalts setzen
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
     });
+
+    const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
+    const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
