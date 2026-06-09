@@ -2817,7 +2817,7 @@ class TodoListPanel extends HTMLElement {
       if (e.key === 'Enter') {
         e.preventDefault();
         const titleEl = bodyEl.querySelector('.title-line');
-        const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : document.getSelection();
+        const sel = document.getSelection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
         if (titleEl && (titleEl.contains(range.startContainer) || titleEl === range.startContainer)) {
@@ -2833,28 +2833,51 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup', e => e.stopImmediatePropagation());
 
-    // Paste: document.execCommand('insertText') kümmert sich nativ um die Cursor-Position.
-    // Das funktioniert zuverlässig in Shadow DOM, unabhängig ob Ctrl+V oder Kontextmenü.
+    // Paste: Browser nativ einfügen lassen (kennt die Cursor-Position korrekt),
+    // danach HTML aufräumen (nur plain text erlauben, ☐/☑ normalisieren).
     bodyEl.addEventListener('paste', e => {
-      e.preventDefault();
-      let text = (e.clipboardData.getData('text/plain') || '')
-        .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
+      // Clipboard-Text auslesen
+      const text = (e.clipboardData.getData('text/plain') || '')
+        .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+        .replace(/([\u2610\u2611])(?! )/g, '$1 ');
 
-      // In Titel-Zeile: nur erste Zeile einfügen
+      // Browser-Paste verhindern und stattdessen nur plain text einfügen
+      e.preventDefault();
+
+      // Aktuelle Selection holen (direkt im paste-Event, bevor irgendwas passiert)
+      const sel = document.getSelection();
+      if (!sel || !sel.rangeCount) {
+        // Fallback: wenn keine Selection, ans Ende
+        bodyEl.focus();
+        document.execCommand('insertText', false, text);
+        return;
+      }
+
+      // Prüfen ob Cursor im Titel ist → nur erste Zeile einfügen
       const titleEl = bodyEl.querySelector('.title-line');
+      let pasteText = text;
       if (titleEl) {
-        const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : document.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          const r = sel.getRangeAt(0);
-          if (titleEl.contains(r.startContainer) || titleEl === r.startContainer) {
-            text = text.split('\n')[0];
-          }
+        const r = sel.getRangeAt(0);
+        if (titleEl.contains(r.startContainer) || titleEl === r.startContainer) {
+          pasteText = text.split('\n')[0];
         }
       }
 
-      // insertText fügt an der aktuellen Cursor-Position ein (nativ, zuverlässig)
-      document.execCommand('insertText', false, text);
+      // Selection löschen falls Text selektiert war
+      if (!sel.isCollapsed) sel.deleteFromDocument();
+
+      // Text als plain text an der Cursor-Position einfügen via Range API
+      const range = sel.getRangeAt(0);
+      const lines = pasteText.split('\n');
+      const frag = document.createDocumentFragment();
+      lines.forEach((line, i) => {
+        if (i > 0) frag.appendChild(document.createElement('br'));
+        if (line) frag.appendChild(document.createTextNode(line));
+      });
+      range.insertNode(frag);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
