@@ -615,19 +615,38 @@ class TodoListPanel extends HTMLElement {
     }, { once: true });
   }
 
-  // Wandelt contenteditable-HTML in plain text um
+  // Wandelt contenteditable-HTML in plain text um (DOM-Traversal, kein Regex)
   _ceToText(el) {
-    const tmp = document.createElement('div');
-    tmp.innerHTML = el.innerHTML
-      // Whitespace zwischen Tags entfernen (Chrome fügt \n zwischen divs ein)
-      .replace(/>\s+</g, '><')
-      .replace(/<span[^>]*class="cb-box"[^>]*data-checked="1"[^>]*>[^<]*<\/span>/gi, '\u2611 ')
-      .replace(/<span[^>]*class="cb-box"[^>]*data-checked="0"[^>]*>[^<]*<\/span>/gi, '\u2610 ')
-      .replace(/<div><br\s*\/?><\/div>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<\/div>/gi, '')
-      .replace(/<div>/gi, '\n');
-    return (tmp.textContent || '').replace(/^\n/, '').replace(/\n+$/, '');
+    let text = '';
+    const walk = (node) => {
+      if (node.nodeType === 3) { // Text-Node
+        text += node.textContent;
+        return;
+      }
+      if (node.nodeType !== 1) return; // Nur Element-Nodes
+      const tag = node.tagName.toLowerCase();
+      // Checkbox-Span → Unicode-Zeichen
+      if (node.classList && node.classList.contains('cb-box')) {
+        text += node.dataset.checked === '1' ? '\u2611 ' : '\u2610 ';
+        return;
+      }
+      // Block-Element (div, p) → Zeilenumbruch davor (wenn nicht schon am Zeilenanfang)
+      if ((tag === 'div' || tag === 'p') && text.length > 0 && !text.endsWith('\n')) {
+        text += '\n';
+      }
+      // <br> → Zeilenumbruch (aber nicht wenn es das einzige Kind in einem leeren div ist)
+      if (tag === 'br') {
+        if (!(node.parentNode && node.parentNode.childNodes.length === 1 &&
+              node.parentNode.tagName === 'DIV' && node.parentNode !== el)) {
+          text += '\n';
+        }
+        return;
+      }
+      // Kinder durchlaufen
+      for (const child of node.childNodes) walk(child);
+    };
+    for (const child of el.childNodes) walk(child);
+    return text.replace(/^\n/, '').replace(/\n+$/, '');
   }
 
   // URLs in Text erkennen und als Links rendern
