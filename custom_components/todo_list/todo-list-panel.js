@@ -2564,17 +2564,42 @@ class TodoListPanel extends HTMLElement {
     });
 
     // Enter in Titel → Fokus auf Notizen
+    // Ctrl/Cmd+A → alles auswählen (titel UND notizen), damit man beides auf einmal kopieren kann
     const boxTitle = this.shadowRoot.getElementById('detail-box-title');
     const boxNotes = this.shadowRoot.getElementById('detail-box-notes');
-    boxTitle.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); boxNotes.focus(); }
-    });
-
-    // Tastaturteignisse nicht an HA weiterleiten (verhindert Assist-Popup bei 'a' etc.)
     [boxTitle, boxNotes].forEach(el => {
-      el.addEventListener('keydown',  e => e.stopImmediatePropagation());
+      el.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+          e.preventDefault();
+          const range = document.createRange();
+          range.setStart(boxTitle, 0);
+          range.setEnd(boxNotes, boxNotes.childNodes.length);
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        } else if (el === boxTitle && e.key === 'Enter') {
+          e.preventDefault();
+          boxNotes.focus();
+        }
+        e.stopImmediatePropagation();
+      });
       el.addEventListener('keypress', e => e.stopImmediatePropagation());
       el.addEventListener('keyup',    e => e.stopImmediatePropagation());
+    });
+
+    // Copy über Titelgrenze hinweg: korrekten Plaintext in Zwischenablage schreiben
+    detailBox.addEventListener('copy', e => {
+      if (!this._detailEditMode) return;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      const range = sel.getRangeAt(0);
+      const startsInTitle = boxTitle.contains(range.startContainer) || boxTitle === range.startContainer;
+      const endsInNotes   = boxNotes.contains(range.endContainer)   || boxNotes === range.endContainer;
+      if (startsInTitle && endsInNotes) {
+        const titleText = boxTitle.textContent;
+        const notesText = this._ceToText(boxNotes);
+        e.clipboardData.setData('text/plain', titleText + (notesText ? '\n' + notesText : ''));
+        e.preventDefault();
+      }
     });
 
     // Paste: nur Plain Text; im Titel nur erste Zeile
