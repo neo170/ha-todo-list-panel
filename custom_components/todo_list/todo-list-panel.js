@@ -477,12 +477,13 @@ class TodoListPanel extends HTMLElement {
     return this._esc(line);
   }
 
-  // Zeile für Display-Modus rendern: ALLE ☐/☑ → klickbarer span + linkify
+  // Zeile für Display-Modus rendern: ☐/☑ → klickbarer span nur bei Editlock, sonst Unicode
   _renderNotesLineDisplay(line) {
-    // Erst escapen, dann alle ☐/☑ durch Spans ersetzen
     let html = this._esc(line);
-    html = html.replace(/\u2611/g, '<span class="cb-box" data-checked="1">\u2611</span>');
-    html = html.replace(/\u2610/g, '<span class="cb-box" data-checked="0">\u2610</span>');
+    if (this._editLocked) {
+      html = html.replace(/\u2611/g, '<span class="cb-box" data-checked="1">\u2611</span>');
+      html = html.replace(/\u2610/g, '<span class="cb-box" data-checked="0">\u2610</span>');
+    }
     return this._linkify(html);
   }
 
