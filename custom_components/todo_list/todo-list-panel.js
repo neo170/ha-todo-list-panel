@@ -657,12 +657,9 @@ class TodoListPanel extends HTMLElement {
       if ((tag === 'div' || tag === 'p') && text.length > 0 && !text.endsWith('\n')) {
         text += '\n';
       }
-      // <br> → Zeilenumbruch (aber nicht wenn es das einzige Kind in einem leeren div ist)
+      // <br> → Zeilenumbruch
       if (tag === 'br') {
-        if (!(node.parentNode && node.parentNode.childNodes.length === 1 &&
-              node.parentNode.tagName === 'DIV' && node.parentNode !== el)) {
-          text += '\n';
-        }
+        text += '\n';
         return;
       }
       // Kinder durchlaufen
