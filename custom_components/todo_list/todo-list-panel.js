@@ -638,6 +638,89 @@ class TodoListPanel extends HTMLElement {
     }, { once: true });
   }
 
+  _showReplaceDialog() {
+    const todo = this._detailTodo;
+    if (!todo) return;
+
+    const overlay = this.shadowRoot.getElementById('dialog-overlay');
+    const box     = this.shadowRoot.getElementById('dialog-box');
+    box.innerHTML = `
+      <h3 style="margin:0 0 1rem">Suchen &amp; Ersetzen</h3>
+      <input id="replace-search" type="text" placeholder="Suchen…" style="
+        width:100%;padding:0.5rem 0.7rem;margin-bottom:0.7rem;border:1px solid var(--divider-color,#ddd);
+        border-radius:8px;font-size:0.95rem;box-sizing:border-box;
+        background:var(--card-background-color,#fff);color:var(--primary-text-color,#222);" />
+      <input id="replace-with" type="text" placeholder="Ersetzen durch…" style="
+        width:100%;padding:0.5rem 0.7rem;margin-bottom:0.5rem;border:1px solid var(--divider-color,#ddd);
+        border-radius:8px;font-size:0.95rem;box-sizing:border-box;
+        background:var(--card-background-color,#fff);color:var(--primary-text-color,#222);" />
+      <p id="replace-status" style="font-size:0.85rem;color:var(--secondary-text-color,#888);margin:0.3rem 0 0.8rem;min-height:1.2em"></p>
+      <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.5rem">
+        <button id="replace-cancel-btn" style="
+          padding:0.45rem 1.2rem;border:1px solid var(--divider-color,#ddd);border-radius:8px;
+          background:transparent;color:var(--primary-text-color,#222);
+          font-size:0.95rem;cursor:pointer;">Abbruch</button>
+        <button id="replace-all-btn" style="
+          padding:0.45rem 1.2rem;border:none;border-radius:8px;
+          background:var(--primary-color,#1976d2);color:#fff;
+          font-size:0.95rem;cursor:pointer;">Alle ersetzen</button>
+      </div>`;
+    overlay.classList.add('open');
+
+    const searchInput = box.querySelector('#replace-search');
+    const withInput   = box.querySelector('#replace-with');
+    const statusEl    = box.querySelector('#replace-status');
+    const cancelBtn   = box.querySelector('#replace-cancel-btn');
+    const allBtn      = box.querySelector('#replace-all-btn');
+
+    searchInput.focus();
+
+    // Live-Zähler
+    const updateCount = () => {
+      const s = searchInput.value;
+      if (!s) { statusEl.textContent = ''; return; }
+      const desc = (todo.description ?? '').replace(/\n#Editlock$/, '').replace(/^#Editlock$/, '');
+      const count = desc.split(s).length - 1;
+      statusEl.textContent = count > 0 ? `${count} Treffer` : 'Keine Treffer';
+    };
+    searchInput.addEventListener('input', updateCount);
+
+    cancelBtn.addEventListener('click', () => { overlay.classList.remove('open'); });
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) overlay.classList.remove('open');
+    }, { once: true });
+
+    allBtn.addEventListener('click', () => {
+      const s = searchInput.value;
+      if (!s) return;
+      const r = withInput.value;
+      let desc = todo.description ?? '';
+      // #Editlock separat behandeln
+      const hadLock = /\n#Editlock$/.test(desc) || /^#Editlock$/.test(desc);
+      desc = desc.replace(/\n#Editlock$/, '').replace(/^#Editlock$/, '');
+      const newDesc = desc.split(s).join(r);
+      if (newDesc === desc) { statusEl.textContent = 'Keine Treffer'; return; }
+      const finalDesc = hadLock ? (newDesc ? newDesc + '\n#Editlock' : '#Editlock') : newDesc;
+      todo.description = finalDesc;
+      this._detailTodo = { ...todo };
+      this._todos = this._todos.map(t => t.uid === todo.uid ? { ...t, description: finalDesc } : t);
+      this._renderDetailMode();
+      this._renderList();
+      overlay.classList.remove('open');
+      // Im Hintergrund speichern
+      const duePayload = todo.due
+        ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
+        : {};
+      this._hass.callService('todo', 'update_item', {
+        entity_id: this._selected,
+        item: todo.uid,
+        rename: todo.summary,
+        description: finalDesc,
+        ...duePayload,
+      }).catch(() => {});
+    });
+  }
+
   // Wandelt contenteditable-HTML in plain text um (DOM-Traversal, kein Regex)
   _ceToText(el) {
     let text = '';
@@ -2611,6 +2694,7 @@ class TodoListPanel extends HTMLElement {
                 <button id="detail-cb-btn">Checkbox</button>
                 <button id="detail-lock-btn">Edit Lock</button>
                 <button id="detail-reset-cb-btn">Reset Checkboxes</button>
+                <button id="detail-replace-btn">Suchen &amp; Ersetzen</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2934,6 +3018,13 @@ class TodoListPanel extends HTMLElement {
         description: newDesc,
         ...duePayload,
       }).catch(() => {});
+    });
+
+    // Suchen & Ersetzen
+    const replaceBtn = this.shadowRoot.getElementById('detail-replace-btn');
+    replaceBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      this._showReplaceDialog();
     });
 
     // Klick auf ☐/☑ span – Zustand umschalten und speichern
