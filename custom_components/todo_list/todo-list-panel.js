@@ -377,12 +377,8 @@ class TodoListPanel extends HTMLElement {
     if (!this._isOnline()) return;
     this._detailTodo = this._todos.find(t => t.uid === uid) ?? null;
     if (!this._detailTodo) return;
-    const t = this._detailTodo;
-    // Edit-Modus direkt wenn kürzlich angelegt und noch kein Inhalt
-    const hasExtra = t.description;
-    const createdAt = this._itemCreatedAt?.[uid];
-    const isRecent  = createdAt && (Date.now() - createdAt < 20000);
-    this._detailEditMode = !hasExtra && isRecent;
+    // Immer im Display-Modus öffnen – Klick ins Feld wechselt zu Edit-Modus
+    this._detailEditMode = false;
     this._showDetail();
   }
 
@@ -2557,9 +2553,12 @@ class TodoListPanel extends HTMLElement {
       }
     });
 
-    // Fokus verlässt die Box komplett → speichern
+    // Fokus verlässt die Box → nur speichern wenn Detail-Panel wirklich sichtbar ist
+    // (verhindert Phantom-Saves während Slider-Transition oder Seiten-Wechsel)
     detailBox.addEventListener('focusout', e => {
       if (detailBox.contains(e.relatedTarget)) return;
+      const slider = this.shadowRoot.getElementById('slider');
+      if (!slider?.classList.contains('show-detail')) return;
       if (this._detailEditMode) this._saveDetail();
     });
 
