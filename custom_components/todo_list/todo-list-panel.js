@@ -2835,44 +2835,78 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: Plain Text an Cursor-Position im ContentEditable einfügen.
-    // execCommand('insertText') + execCommand('insertLineBreak') ist am zuverlässigsten
-    // in Shadow DOM; range.insertNode() kann auf das äußere Dokument zeigen.
-    // Guard: Cursor muss innerhalb von bodyEl sein, sonst ans Ende setzen.
+    // Paste: Checkbox-Chars werden sofort als Span-Nodes eingefügt (rund + styled),
+    // normaler Text per execCommand. Cursor-Position wird aus der Range genommen,
+    // Fallback: Ende der Notiz.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
+      e.stopPropagation();
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      // Checkbox-Zeichen normalisieren: ☐/☑ brauchen exakt ein Leerzeichen danach
       text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
 
       const titleEl2 = bodyEl.querySelector('.title-line');
       const sel = window.getSelection();
 
-      // Cursor-Position prüfen – muss in bodyEl liegen
-      const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
-      if (!range || !bodyEl.contains(range.startContainer)) {
-        // Cursor nicht im Editor → ans Ende der Notiz setzen
-        bodyEl.focus();
-        const endRange = document.createRange();
-        endRange.selectNodeContents(bodyEl);
-        endRange.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(endRange);
+      // Cursor-Range ermitteln – muss in bodyEl liegen, nicht in cb-box, nicht in Titel
+      let pasteRange = null;
+      if (sel && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0);
+        let node = r.startContainer;
+        // cb-box ist contenteditable=false: Range davor/danach setzen
+        if (node.nodeType === 1 && node.classList?.contains('cb-box')) {
+          pasteRange = document.createRange();
+          pasteRange.setStartAfter(node);
+          pasteRange.collapse(true);
+        } else if (bodyEl.contains(node)) {
+          pasteRange = r.cloneRange();
+        }
       }
+      if (!pasteRange) {
+        // Kein gültiger Cursor → ans Ende der Notiz
+        pasteRange = document.createRange();
+        pasteRange.selectNodeContents(bodyEl);
+        pasteRange.collapse(false);
+      }
+      sel.removeAllRanges();
+      sel.addRange(pasteRange);
+      bodyEl.focus();
 
-      // Im Titel nur erste Zeile erlauben
-      const curRange = sel.getRangeAt(0);
+      // Im Titel nur erste Zeile
       const inTitle = titleEl2 &&
-        (titleEl2.contains(curRange.startContainer) || titleEl2 === curRange.startContainer);
+        (titleEl2.contains(pasteRange.startContainer) || titleEl2 === pasteRange.startContainer);
       if (inTitle) text = text.split('\n')[0];
 
-      // Einzeilig: direkt inserText; Mehrzeilig: Zeilen mit insertLineBreak trennen
+      // Selektion löschen (ersetzen falls Text markiert)
+      if (!pasteRange.collapsed) pasteRange.deleteContents();
+
+      // Fragment aufbauen: ☐/☑ → sofortige Span-Nodes, Rest als Text
       const lines = text.split('\n');
+      const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
-        if (i > 0) document.execCommand('insertLineBreak');
-        if (line) document.execCommand('insertText', false, line);
+        if (i > 0) frag.appendChild(document.createElement('br'));
+        const ch = line.charCodeAt(0);
+        if (ch === 0x2610 || ch === 0x2611) {
+          const span = document.createElement('span');
+          span.className = 'cb-box';
+          span.setAttribute('contenteditable', 'false');
+          span.setAttribute('data-checked', ch === 0x2611 ? '1' : '0');
+          span.textContent = ch === 0x2611 ? '\u2611' : '\u2610';
+          frag.appendChild(span);
+          const rest = (line[1] === ' ') ? line.slice(2) : line.slice(1);
+          if (rest) frag.appendChild(document.createTextNode(rest));
+        } else {
+          if (line) frag.appendChild(document.createTextNode(line));
+        }
       });
+
+      // Fragment an Cursor-Position einfügen (Range ist innerhalb Shadow-Root)
+      const insertRange = sel.getRangeAt(0);
+      insertRange.deleteContents();
+      insertRange.insertNode(frag);
+      insertRange.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(insertRange);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
