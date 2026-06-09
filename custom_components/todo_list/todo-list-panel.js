@@ -2514,14 +2514,15 @@ class TodoListPanel extends HTMLElement {
           content: '';
           display: block;
           position: absolute;
-          left: 33%;
-          top: 16%;
-          width: 28%;
-          height: 50%;
+          left: 50%;
+          top: 50%;
+          width: 35%;
+          height: 55%;
           border: 2.5px solid #4caf50;
           border-top: none;
           border-left: none;
-          transform: rotate(45deg);
+          transform: translate(-60%, -65%) rotate(45deg);
+          transform-origin: center center;
           box-sizing: border-box;
         }
         .cb-box:hover { opacity: 0.72; }
