@@ -30,7 +30,6 @@ class TodoListPanel extends HTMLElement {
     this._dragCurrentY    = 0;
     this._dragTimer       = null;
     this._dragTargetIdx   = -1;
-    this._itemLastModified = new Map(); // uid → Date
   }
 
   // ── HASS ─────────────────────────────────────────────────
@@ -339,7 +338,6 @@ class TodoListPanel extends HTMLElement {
     );
     this._detailTodo     = { ...todo, summary: newTitle, description: newNotes };
     this._detailEditMode = false;
-    this._itemLastModified.set(todo.uid, new Date());  // Änderungszeitpunkt merken
     if (closeAfter) { this._closeDetail(); } else { this._renderDetailMode(); }
     this._renderList();
 
@@ -455,20 +453,31 @@ class TodoListPanel extends HTMLElement {
   _showInfoPopup() {
     const todo = this._detailTodo;
     if (!todo) return;
-    const lastMod = this._itemLastModified.get(todo.uid);
+
+    // Erstellungsdatum aus UUID v1 extrahieren
+    // UUID v1: 100-Nanosekunden-Intervalle seit 15.10.1582 (gregorianischer Kalender)
+    const uuidDate = (() => {
+      const m = /^([0-9a-f]{8})-([0-9a-f]{4})-(1)([0-9a-f]{3})-/i.exec(todo.uid ?? '');
+      if (!m) return null;
+      const hi = parseInt(m[4] + m[2] + m[1], 16);
+      const ms = Math.floor((hi - 122192928000000000) / 10000);
+      const d = new Date(ms);
+      return isNaN(d) ? null : d;
+    })();
+
     const fmt = d => d.toLocaleString('de-DE', {
       day: '2-digit', month: '2-digit', year: 'numeric',
       hour: '2-digit', minute: '2-digit'
     });
-    const modLine = lastMod
-      ? `<p><strong>Letzte Änderung:</strong><br>${fmt(lastMod)}</p>`
-      : `<p style="color:var(--secondary-text-color,#888);font-size:0.9rem">Noch keine Änderung in dieser Sitzung</p>`;
+    const dateLine = uuidDate
+      ? `<p><strong>Erstellt am:</strong><br>${fmt(uuidDate)}</p>`
+      : `<p style="color:var(--secondary-text-color,#888);font-size:0.9rem">Erstellungsdatum nicht verfügbar</p>`;
 
     const overlay = this.shadowRoot.getElementById('dialog-overlay');
     const box     = this.shadowRoot.getElementById('dialog-box');
     box.innerHTML = `
       <h3 style="margin:0 0 1rem">Info</h3>
-      ${modLine}
+      ${dateLine}
       <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
         <button id="info-close-btn" style="
           padding:0.45rem 1.2rem;border:none;border-radius:8px;
