@@ -341,6 +341,11 @@ class TodoListPanel extends HTMLElement {
     if (closeAfter) { this._closeDetail(); } else { this._renderDetailMode(); }
     this._renderList();
 
+    // Bestehendes Fälligkeitsdatum beim Text-Speichern mitschicken
+    const duePayload = todo.due
+      ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
+      : {};
+
     // Im Hintergrund speichern
     try {
       await this._callWithTimeout(
@@ -349,6 +354,7 @@ class TodoListPanel extends HTMLElement {
           item:        todo.uid,
           rename:      newTitle,
           description: newNotes,
+          ...duePayload,
         })
       );
     } catch (e) {
@@ -359,6 +365,7 @@ class TodoListPanel extends HTMLElement {
             entity_id: this._selected,
             item:      todo.uid,
             rename:    newTitle,
+            ...duePayload,
           })
         );
       } catch (e2) {
@@ -448,6 +455,90 @@ class TodoListPanel extends HTMLElement {
       ? this._linkify(this._esc(notesRaw)).split('\n').join('<br>')
       : '';
     bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
+  }
+
+  _showDuePopup() {
+    const todo = this._detailTodo;
+    if (!todo) return;
+
+    // Vorhandenes Fälligkeitsdatum vorbelegen
+    let initDate = '', initTime = '';
+    if (todo.due) {
+      if (todo.due.includes('T')) {
+        [initDate, initTime] = todo.due.split('T');
+        initTime = initTime.slice(0, 5);
+      } else {
+        initDate = todo.due;
+      }
+    }
+
+    const overlay = this.shadowRoot.getElementById('dialog-overlay');
+    const box     = this.shadowRoot.getElementById('dialog-box');
+    box.innerHTML = `
+      <h3 style="margin:0 0 1rem">⏰ Fälligkeit</h3>
+      <div style="display:flex;flex-direction:column;gap:0.75rem">
+        <label style="font-size:0.85rem;color:var(--secondary-text-color,#888)">Datum</label>
+        <input id="due-date-input" type="date" value="${initDate}" style="
+          padding:0.5rem 0.75rem;border:1px solid var(--divider-color,#ddd);
+          border-radius:8px;font-size:1rem;background:var(--card-background-color,#fff);
+          color:var(--primary-text-color,#222);width:100%;box-sizing:border-box">
+        <label style="font-size:0.85rem;color:var(--secondary-text-color,#888)">Uhrzeit (optional)</label>
+        <input id="due-time-input" type="time" value="${initTime}" style="
+          padding:0.5rem 0.75rem;border:1px solid var(--divider-color,#ddd);
+          border-radius:8px;font-size:1rem;background:var(--card-background-color,#fff);
+          color:var(--primary-text-color,#222);width:100%;box-sizing:border-box">
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.25rem">
+        <button id="due-clear-btn" style="
+          padding:0.45rem 1rem;border:1px solid var(--divider-color,#ddd);
+          border-radius:8px;background:none;color:var(--primary-text-color,#444);
+          font-size:0.95rem;cursor:pointer">Entfernen</button>
+        <button id="due-save-btn" style="
+          padding:0.45rem 1.2rem;border:none;border-radius:8px;
+          background:var(--primary-color,#1976d2);color:#fff;
+          font-size:0.95rem;cursor:pointer">Speichern</button>
+      </div>`;
+    overlay.classList.add('open');
+
+    const close = () => overlay.classList.remove('open');
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); }, { once: true });
+
+    box.querySelector('#due-clear-btn').addEventListener('click', () => {
+      close();
+      this._saveDue(null);
+    });
+    box.querySelector('#due-save-btn').addEventListener('click', () => {
+      const dateVal = box.querySelector('#due-date-input').value;
+      const timeVal = box.querySelector('#due-time-input').value;
+      close();
+      if (!dateVal) { this._saveDue(null); return; }
+      const due = timeVal ? `${dateVal}T${timeVal}:00` : dateVal;
+      this._saveDue(due);
+    });
+  }
+
+  async _saveDue(due) {
+    const todo = this._detailTodo;
+    if (!todo) return;
+    // Fälligkeitsdatum ohne Textänderung speichern
+    const duePayload = due
+      ? (due.includes('T') ? { due_datetime: due } : { due_date: due })
+      : { due_date: null };
+    this._todos      = this._todos.map(t => t.uid === todo.uid ? { ...t, due } : t);
+    this._detailTodo = { ...todo, due };
+    this._renderList();
+    try {
+      await this._callWithTimeout(
+        this._hass.callService('todo', 'update_item', {
+          entity_id: this._selected,
+          item:      todo.uid,
+          rename:    todo.summary,
+          ...duePayload,
+        })
+      );
+    } catch (e) {
+      console.warn('_saveDue failed:', e);
+    }
   }
 
   _showInfoPopup() {
@@ -2401,6 +2492,7 @@ class TodoListPanel extends HTMLElement {
               </ha-icon-button>
               <div class="detail-dropdown" id="detail-dropdown">
                 <button id="detail-info-btn">Info</button>
+                <button id="detail-due-btn">Fälligkeit</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2659,6 +2751,7 @@ class TodoListPanel extends HTMLElement {
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
     const infoBtn    = this.shadowRoot.getElementById('detail-info-btn');
+    const dueBtn     = this.shadowRoot.getElementById('detail-due-btn');
 
     menuBtn.addEventListener('click', e => {
       e.stopPropagation();
@@ -2668,6 +2761,11 @@ class TodoListPanel extends HTMLElement {
     infoBtn.addEventListener('click', () => {
       dropdown.classList.remove('open');
       this._showInfoPopup();
+    });
+
+    dueBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      this._showDuePopup();
     });
 
     deleteBtn.addEventListener('click', () => {
