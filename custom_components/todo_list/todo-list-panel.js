@@ -420,8 +420,8 @@ class TodoListPanel extends HTMLElement {
       // Notizen: Zeilenumbrüche → <br>
       notesEl.innerHTML = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
 
-      // Cursor nur programmatisch setzen wenn NICHT per Mausklick eingestiegen
-      // (beim Klick setzt der Browser den Cursor selbst an die Klickposition)
+      // Cursor programmatisch setzen wenn NICHT per Mausklick eingestiegen
+      // (beim Klick übernimmt _placeCaretAt die Cursor-Position)
       if (!this._editEnteredByClick) {
         setTimeout(() => {
           titleEl.focus();
@@ -2249,6 +2249,7 @@ class TodoListPanel extends HTMLElement {
           padding: 0.75rem 0.9rem;
           cursor: text;
           min-height: 6rem;
+          flex-shrink: 0;   /* verhindert, dass die Box im flex-Container schrumpft */
           box-sizing: border-box;
           transition: border-color 0.15s;
         }
@@ -2544,13 +2545,37 @@ class TodoListPanel extends HTMLElement {
       }
     });
 
-    // Detail-Box: Klick → Edit-Modus; Flag setzen damit Cursor-Position erhalten bleibt
+    // Detail-Box: mousedown → Edit-Modus + Cursor an Klick-Position setzen (ein Klick)
     const detailBox = this.shadowRoot.getElementById('detail-box');
-    detailBox.addEventListener('click', () => {
+    detailBox.addEventListener('mousedown', (e) => {
       if (!this._detailEditMode) {
-        this._detailEditMode = true;
-        this._editEnteredByClick = true;
+        e.preventDefault(); // Kontrolle über Fokus selbst übernehmen
+        const clickX = e.clientX;
+        const clickY = e.clientY;
+        this._detailEditMode      = true;
+        this._editEnteredByClick  = true;
         this._renderDetailMode();
+        // Nach DOM-Update Cursor an Klickkoordinaten setzen
+        requestAnimationFrame(() => {
+          const tEl = this.shadowRoot.getElementById('detail-box-title');
+          const nEl = this.shadowRoot.getElementById('detail-box-notes');
+          let range = null;
+          if (document.caretRangeFromPoint) {
+            range = document.caretRangeFromPoint(clickX, clickY);
+          } else if (document.caretPositionFromPoint) {
+            const pos = document.caretPositionFromPoint(clickX, clickY);
+            if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
+          }
+          if (range && (tEl?.contains(range.startContainer) || nEl?.contains(range.startContainer))) {
+            const target = tEl?.contains(range.startContainer) ? tEl : nEl;
+            target.focus();
+            const sel = window.getSelection();
+            if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          } else {
+            // Fallback: Fokus ans Ende des Titels
+            tEl?.focus();
+          }
+        });
       }
     });
 
