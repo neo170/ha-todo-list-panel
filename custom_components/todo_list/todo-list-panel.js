@@ -2819,10 +2819,8 @@ class TodoListPanel extends HTMLElement {
       if (!s || !s.rangeCount) return;
       try {
         const r = s.getRangeAt(0);
-        const n = r.startContainer;
-        if (n === bodyEl || bodyEl.contains(n)) {
-          this._savedPasteRange = r.cloneRange();
-        }
+        let cur = r.startContainer;
+        while (cur) { if (cur === bodyEl) { this._savedPasteRange = r.cloneRange(); return; } cur = cur.parentNode; }
       } catch (_) {}
     };
     bodyEl.addEventListener('mouseup', _savePasteRange);
@@ -2855,20 +2853,41 @@ class TodoListPanel extends HTMLElement {
       _savePasteRange(); // Cursor nach Pfeiltasten etc. sichern
     });
 
-    // Paste: gespeicherte Range verwenden, Fallback: Ende der Notiz
+    // Hilfsfunktion: prüft ob ein DOM-Knoten innerhalb von bodyEl liegt.
+    // Nutzt manuelle Eltern-Traversal statt bodyEl.contains() wegen Shadow-DOM-Quirks.
+    const _inBody = (n) => {
+      let cur = n;
+      while (cur) { if (cur === bodyEl) return true; cur = cur.parentNode; }
+      return false;
+    };
+
+    // Paste: aktuellen Cursor direkt aus window.getSelection() lesen – der Browser
+    // hält den Cursor beim Paste-Event korrekt, egal ob per Tastatur oder Kontextmenü.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
 
       let pasteRange = null;
-      if (this._savedPasteRange) {
+
+      // Priorität 1: Live-Selektion zum Paste-Zeitpunkt (zuverlässigste Quelle)
+      try {
+        const selNow = window.getSelection();
+        if (selNow && selNow.rangeCount > 0) {
+          const r = selNow.getRangeAt(0);
+          if (_inBody(r.startContainer)) pasteRange = r.cloneRange();
+        }
+      } catch (_) {}
+
+      // Priorität 2: gespeicherte Range aus mouseup/keyup (Fallback)
+      if (!pasteRange && this._savedPasteRange) {
         try {
-          const n = this._savedPasteRange.startContainer;
-          if (n === bodyEl || bodyEl.contains(n)) {
+          if (_inBody(this._savedPasteRange.startContainer)) {
             pasteRange = this._savedPasteRange.cloneRange();
           }
         } catch (_) {}
-        this._savedPasteRange = null;
       }
+      this._savedPasteRange = null;
+
+      // Fallback: Ende der Notiz
       if (!pasteRange) {
         pasteRange = document.createRange();
         pasteRange.selectNodeContents(bodyEl);
