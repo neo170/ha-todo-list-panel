@@ -2835,52 +2835,47 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: Checkbox-Chars werden sofort als Span-Nodes eingefügt (rund + styled),
-    // normaler Text per execCommand. Cursor-Position wird aus der Range genommen,
-    // Fallback: Ende der Notiz.
+    // Paste: Range SOFORT am Event-Anfang sichern – focus() würde sie zurücksetzen.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       e.stopPropagation();
+
+      // 1. Range JETZT sichern (vor jedem focus/removeAllRanges)
+      const sel = window.getSelection();
+      let pasteRange = null;
+      if (sel && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0);
+        const startNode = r.startContainer;
+        if (startNode.nodeType === 1 && startNode.classList?.contains('cb-box')) {
+          // Cursor auf non-editable Span → direkt dahinter
+          pasteRange = document.createRange();
+          pasteRange.setStartAfter(startNode);
+          pasteRange.collapse(true);
+        } else if (bodyEl === startNode || bodyEl.contains(startNode)) {
+          pasteRange = r.cloneRange();
+        }
+      }
+      if (!pasteRange) {
+        // Kein Cursor im Editor → ans Ende der Notiz
+        pasteRange = document.createRange();
+        pasteRange.selectNodeContents(bodyEl);
+        pasteRange.collapse(false);
+      }
+
+      // 2. Text aufbereiten
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
 
       const titleEl2 = bodyEl.querySelector('.title-line');
-      const sel = window.getSelection();
-
-      // Cursor-Range ermitteln – muss in bodyEl liegen, nicht in cb-box, nicht in Titel
-      let pasteRange = null;
-      if (sel && sel.rangeCount > 0) {
-        const r = sel.getRangeAt(0);
-        let node = r.startContainer;
-        // cb-box ist contenteditable=false: Range davor/danach setzen
-        if (node.nodeType === 1 && node.classList?.contains('cb-box')) {
-          pasteRange = document.createRange();
-          pasteRange.setStartAfter(node);
-          pasteRange.collapse(true);
-        } else if (bodyEl.contains(node)) {
-          pasteRange = r.cloneRange();
-        }
-      }
-      if (!pasteRange) {
-        // Kein gültiger Cursor → ans Ende der Notiz
-        pasteRange = document.createRange();
-        pasteRange.selectNodeContents(bodyEl);
-        pasteRange.collapse(false);
-      }
-      sel.removeAllRanges();
-      sel.addRange(pasteRange);
-      bodyEl.focus();
-
-      // Im Titel nur erste Zeile
       const inTitle = titleEl2 &&
         (titleEl2.contains(pasteRange.startContainer) || titleEl2 === pasteRange.startContainer);
       if (inTitle) text = text.split('\n')[0];
 
-      // Selektion löschen (ersetzen falls Text markiert)
-      if (!pasteRange.collapsed) pasteRange.deleteContents();
+      // 3. Markierten Inhalt löschen (Ersetzen)
+      pasteRange.deleteContents();
 
-      // Fragment aufbauen: ☐/☑ → sofortige Span-Nodes, Rest als Text
+      // 4. Fragment aufbauen: ☐/☑ → Span-Nodes, Rest als Textknoten
       const lines = text.split('\n');
       const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
@@ -2900,13 +2895,11 @@ class TodoListPanel extends HTMLElement {
         }
       });
 
-      // Fragment an Cursor-Position einfügen (Range ist innerhalb Shadow-Root)
-      const insertRange = sel.getRangeAt(0);
-      insertRange.deleteContents();
-      insertRange.insertNode(frag);
-      insertRange.collapse(false);
+      // 5. An gesicherter Cursor-Position einfügen (KEIN focus() dazwischen!)
+      pasteRange.insertNode(frag);
+      pasteRange.collapse(false);
       sel.removeAllRanges();
-      sel.addRange(insertRange);
+      sel.addRange(pasteRange);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
