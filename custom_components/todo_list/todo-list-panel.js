@@ -319,11 +319,10 @@ class TodoListPanel extends HTMLElement {
     const todo = this._detailTodo;
     if (!todo) return;
 
-    const textarea = this.shadowRoot.getElementById('detail-textarea');
-    const rawText  = textarea ? textarea.value : '';
-    const lines    = rawText.split('\n');
-    const newTitle = lines[0].trim() || todo.summary;
-    const newNotes = lines.length > 1 ? lines.slice(1).join('\n').replace(/^\n+/, '') : '';
+    const titleEl = this.shadowRoot.getElementById('detail-box-title');
+    const notesEl  = this.shadowRoot.getElementById('detail-box-notes');
+    const newTitle = titleEl ? (titleEl.textContent.trim() || todo.summary) : todo.summary;
+    const newNotes = notesEl ? this._ceToText(notesEl) : (todo.description ?? '');
 
     // Optimistisch: lokalen State sofort updaten
     this._todos = this._todos.map(t =>
@@ -404,47 +403,55 @@ class TodoListPanel extends HTMLElement {
   }
 
   _renderDetailMode() {
-    const todo     = this._detailTodo;
-    const edit     = this._detailEditMode;
-    const display  = this.shadowRoot.getElementById('detail-display');
-    const textarea = this.shadowRoot.getElementById('detail-textarea');
-    if (!display || !textarea) return;
+    const todo    = this._detailTodo;
+    const edit    = this._detailEditMode;
+    const box     = this.shadowRoot.getElementById('detail-box');
+    const titleEl = this.shadowRoot.getElementById('detail-box-title');
+    const notesEl = this.shadowRoot.getElementById('detail-box-notes');
+    if (!box || !titleEl || !notesEl) return;
 
     if (edit) {
-      // Textarea befüllen: erste Zeile = Titel, Rest = Notizen
-      const fullText = todo.description
-        ? `${todo.summary ?? ''}\n${todo.description}`
-        : (todo.summary ?? '');
-      textarea.value = fullText;
-      display.style.display  = 'none';
-      textarea.style.display = '';
-      this._autoResizeTextarea(textarea);
+      box.classList.add('editing');
+      titleEl.contentEditable = 'true';
+      notesEl.contentEditable = 'true';
+
+      // Titel als plain text setzen
+      titleEl.textContent = todo.summary ?? '';
+      // Notizen: Zeilenumbrüche → <br>
+      notesEl.innerHTML = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
+
       setTimeout(() => {
-        textarea.focus();
-        // Cursor ans Ende
-        textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+        titleEl.focus();
+        const range = document.createRange();
+        range.selectNodeContents(titleEl);
+        range.collapse(false);
+        const sel = window.getSelection();
+        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
       }, 30);
     } else {
-      // Display: Titel fett/groß, Notizen mit klickbaren Links
-      textarea.style.display = 'none';
-      display.style.display  = '';
+      box.classList.remove('editing');
+      titleEl.contentEditable = 'false';
+      notesEl.contentEditable = 'false';
       this._renderDisplay(todo);
     }
   }
 
   _renderDisplay(todo) {
-    const display = this.shadowRoot.getElementById('detail-display');
-    if (!display) return;
-    const titleHtml = `<div class="display-title">${this._esc(todo.summary ?? '')}</div>`;
-    const notesHtml = todo.description
-      ? `<div class="display-notes">${this._linkify(this._esc(todo.description))}</div>`
-      : '';
-    display.innerHTML = titleHtml + notesHtml;
+    const titleEl = this.shadowRoot.getElementById('detail-box-title');
+    const notesEl = this.shadowRoot.getElementById('detail-box-notes');
+    if (!titleEl || !notesEl) return;
+    titleEl.textContent = todo.summary ?? '';
+    notesEl.innerHTML   = todo.description ? this._linkify(this._esc(todo.description)) : '';
   }
 
-  _autoResizeTextarea(ta) {
-    ta.style.height = 'auto';
-    ta.style.height = (ta.scrollHeight) + 'px';
+  // Wandelt contenteditable-HTML in plain text um
+  _ceToText(el) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = el.innerHTML
+      .replace(/<\/div>/gi, '\n')
+      .replace(/<div>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n');
+    return (tmp.textContent || '').replace(/\n+$/, '');
   }
 
   // URLs in Text erkennen und als Links rendern
@@ -2222,61 +2229,51 @@ class TodoListPanel extends HTMLElement {
           gap: 0;
         }
 
-        /* Display-Ansicht (Lese-Modus) */
-        .detail-display-view {
-          cursor: text;
-          padding: 0.75rem 0.9rem;
+        /* ── Unified Detail Box ── */
+        .detail-box {
+          border: 1.5px solid var(--divider-color, #ddd);
           border-radius: 10px;
-          border: 1.5px solid transparent;
-          min-height: 6rem;
-          word-break: break-word;
-          box-sizing: border-box;
-          transition: border-color 0.15s, background 0.15s;
-        }
-        .detail-display-view:hover {
-          border-color: var(--divider-color, #ddd);
           background: var(--card-background-color, #fff);
+          padding: 0.75rem 0.9rem;
+          cursor: text;
+          min-height: 6rem;
+          box-sizing: border-box;
+          transition: border-color 0.15s;
+        }
+        .detail-box.editing {
+          border-color: #1976d2;
         }
 
-        .display-title {
+        .detail-box-title {
           font-size: 1.35rem;
           font-weight: 700;
           color: var(--primary-text-color, #222);
           line-height: 1.3;
-          margin-bottom: 0.6rem;
+          margin-bottom: 0.5rem;
           word-break: break-word;
+          outline: none;
+          min-height: 1.5em;
+          caret-color: #1976d2;
         }
 
-        .display-notes {
+        .detail-box-notes {
           font-size: 1rem;
           color: var(--primary-text-color, #333);
           line-height: 1.6;
           white-space: pre-wrap;
           word-break: break-word;
+          outline: none;
+          min-height: 3rem;
+          caret-color: #1976d2;
         }
 
-        .display-notes a {
+        .detail-box-notes a {
           color: #1976d2;
           text-decoration: underline;
           word-break: break-all;
         }
-
-        /* Unified Textarea (Bearbeitungs-Modus) */
-        .detail-textarea {
-          width: 100%;
-          padding: 0.75rem 0.9rem;
-          border-radius: 10px;
-          border: 1.5px solid #1976d2;
-          font-size: 1rem;
-          font-family: inherit;
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color, #333);
-          outline: none;
-          resize: none;
-          overflow: hidden;
-          min-height: 6rem;
-          box-sizing: border-box;
-          line-height: 1.6;
+        .detail-box.editing .detail-box-notes a {
+          pointer-events: none;
         }
 
       </style>
@@ -2356,9 +2353,10 @@ class TodoListPanel extends HTMLElement {
         </div>
 
         <div class="detail-content" id="detail-content">
-          <!-- Unified content: Display-Modus (klickbar) ODER Textarea (Bearbeitung) -->
-          <div id="detail-display" class="detail-display-view"></div>
-          <textarea id="detail-textarea" class="detail-textarea" style="display:none;" placeholder="Erste Zeile = Titel&#10;Zweite Zeile = Notiz…"></textarea>
+          <div id="detail-box" class="detail-box">
+            <div id="detail-box-title" class="detail-box-title" contenteditable="false" spellcheck="true"></div>
+            <div id="detail-box-notes" class="detail-box-notes" contenteditable="false" spellcheck="true"></div>
+          </div>
         </div>
       </div>
 
@@ -2534,24 +2532,36 @@ class TodoListPanel extends HTMLElement {
       }
     });
 
-    // Display-Fläche anklicken → Edit-Modus (Textarea)
-    this.shadowRoot.getElementById('detail-display').addEventListener('click', () => {
+    // Detail-Box: Klick → Edit-Modus
+    const detailBox = this.shadowRoot.getElementById('detail-box');
+    detailBox.addEventListener('click', () => {
       if (!this._detailEditMode) {
         this._detailEditMode = true;
         this._renderDetailMode();
       }
     });
 
-    // Textarea: Blur → Auto-Speichern + zurück zur Display-Ansicht
-    const detailTextarea = this.shadowRoot.getElementById('detail-textarea');
-    detailTextarea.addEventListener('blur', () => {
-      if (this._detailEditMode) {
-        this._saveDetail();
-      }
+    // Fokus verlässt die Box komplett → speichern
+    detailBox.addEventListener('focusout', e => {
+      if (detailBox.contains(e.relatedTarget)) return;
+      if (this._detailEditMode) this._saveDetail();
     });
-    // Auto-Resize beim Tippen
-    detailTextarea.addEventListener('input', () => {
-      this._autoResizeTextarea(detailTextarea);
+
+    // Enter in Titel → Fokus auf Notizen
+    const boxTitle = this.shadowRoot.getElementById('detail-box-title');
+    const boxNotes = this.shadowRoot.getElementById('detail-box-notes');
+    boxTitle.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); boxNotes.focus(); }
+    });
+
+    // Paste: nur Plain Text; im Titel nur erste Zeile
+    [boxTitle, boxNotes].forEach(el => {
+      el.addEventListener('paste', e => {
+        e.preventDefault();
+        const text = e.clipboardData.getData('text/plain');
+        const insert = el === boxTitle ? text.split('\n')[0] : text;
+        document.execCommand('insertText', false, insert);
+      });
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
