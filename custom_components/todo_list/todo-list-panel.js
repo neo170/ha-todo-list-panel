@@ -2435,6 +2435,11 @@ class TodoListPanel extends HTMLElement {
           min-height: 4rem;
           caret-color: #1976d2;
         }
+        /* Chrome wickelt Zeilen in <div> beim plaintext-only editing → kein extra Abstand */
+        .detail-box-body div:not(.title-line) {
+          margin: 0;
+          padding: 0;
+        }
 
         .detail-box-body .title-line {
           font-size: 1.35rem;
