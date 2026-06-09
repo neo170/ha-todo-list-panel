@@ -2909,8 +2909,6 @@ class TodoListPanel extends HTMLElement {
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
-
-    const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
     const infoBtn    = this.shadowRoot.getElementById('detail-info-btn');
