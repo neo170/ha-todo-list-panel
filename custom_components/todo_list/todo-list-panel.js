@@ -2812,29 +2812,12 @@ class TodoListPanel extends HTMLElement {
     const bodyEl = this.shadowRoot.getElementById('detail-box-body');
 
     // Tastatur: HA-Assist-Intercept + Enter-Verhalten
-    // Cursor-Position bei jeder Bewegung speichern (mouseup, keyup, Ctrl+V keydown)
-    // damit paste sie unabhängig vom Auslöser (Tastatur oder Kontextmenü) nutzen kann.
-    const _savePasteRange = () => {
-      const s = window.getSelection();
-      if (!s || !s.rangeCount) return;
-      try {
-        const r = s.getRangeAt(0);
-        let cur = r.startContainer;
-        while (cur) { if (cur === bodyEl) { this._savedPasteRange = r.cloneRange(); return; } cur = cur.parentNode; }
-      } catch (_) {}
-    };
-    bodyEl.addEventListener('mouseup', _savePasteRange);
-    bodyEl.addEventListener('click',   _savePasteRange);
-
     bodyEl.addEventListener('keydown', e => {
       e.stopImmediatePropagation();
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-        _savePasteRange(); // Range unmittelbar vor Paste sichern
-      }
       if (e.key === 'Enter') {
         e.preventDefault();
         const titleEl = bodyEl.querySelector('.title-line');
-        const sel = window.getSelection();
+        const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : document.getSelection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
         if (titleEl && (titleEl.contains(range.startContainer) || titleEl === range.startContainer)) {
@@ -2848,86 +2831,30 @@ class TodoListPanel extends HTMLElement {
       }
     });
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
-    bodyEl.addEventListener('keyup', e => {
-      e.stopImmediatePropagation();
-      _savePasteRange(); // Cursor nach Pfeiltasten etc. sichern
-    });
+    bodyEl.addEventListener('keyup', e => e.stopImmediatePropagation());
 
-    // Hilfsfunktion: prüft ob ein DOM-Knoten innerhalb von bodyEl liegt.
-    // Nutzt manuelle Eltern-Traversal statt bodyEl.contains() wegen Shadow-DOM-Quirks.
-    const _inBody = (n) => {
-      let cur = n;
-      while (cur) { if (cur === bodyEl) return true; cur = cur.parentNode; }
-      return false;
-    };
-
-    // Paste: aktuellen Cursor direkt aus window.getSelection() lesen – der Browser
-    // hält den Cursor beim Paste-Event korrekt, egal ob per Tastatur oder Kontextmenü.
+    // Paste: document.execCommand('insertText') kümmert sich nativ um die Cursor-Position.
+    // Das funktioniert zuverlässig in Shadow DOM, unabhängig ob Ctrl+V oder Kontextmenü.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
-
-      let pasteRange = null;
-
-      // Priorität 1: Live-Selektion zum Paste-Zeitpunkt (zuverlässigste Quelle)
-      try {
-        const selNow = window.getSelection();
-        if (selNow && selNow.rangeCount > 0) {
-          const r = selNow.getRangeAt(0);
-          if (_inBody(r.startContainer)) pasteRange = r.cloneRange();
-        }
-      } catch (_) {}
-
-      // Priorität 2: gespeicherte Range aus mouseup/keyup (Fallback)
-      if (!pasteRange && this._savedPasteRange) {
-        try {
-          if (_inBody(this._savedPasteRange.startContainer)) {
-            pasteRange = this._savedPasteRange.cloneRange();
-          }
-        } catch (_) {}
-      }
-      this._savedPasteRange = null;
-
-      // Fallback: Ende der Notiz
-      if (!pasteRange) {
-        pasteRange = document.createRange();
-        pasteRange.selectNodeContents(bodyEl);
-        pasteRange.collapse(false);
-      }
-
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
 
-      const titleEl2 = bodyEl.querySelector('.title-line');
-      const inTitle = titleEl2 &&
-        (titleEl2.contains(pasteRange.startContainer) || titleEl2 === pasteRange.startContainer);
-      if (inTitle) text = text.split('\n')[0];
-
-      pasteRange.deleteContents();
-
-      const lines = text.split('\n');
-      const frag = document.createDocumentFragment();
-      lines.forEach((line, i) => {
-        if (i > 0) frag.appendChild(document.createElement('br'));
-        const ch = line.charCodeAt(0);
-        if (ch === 0x2610 || ch === 0x2611) {
-          const span = document.createElement('span');
-          span.className = 'cb-box';
-          span.setAttribute('contenteditable', 'false');
-          span.setAttribute('data-checked', ch === 0x2611 ? '1' : '0');
-          span.textContent = ch === 0x2611 ? '\u2611' : '\u2610';
-          frag.appendChild(span);
-          const rest = line[1] === ' ' ? line.slice(2) : line.slice(1);
-          if (rest) frag.appendChild(document.createTextNode(rest));
-        } else {
-          if (line) frag.appendChild(document.createTextNode(line));
+      // In Titel-Zeile: nur erste Zeile einfügen
+      const titleEl = bodyEl.querySelector('.title-line');
+      if (titleEl) {
+        const sel = this.shadowRoot.getSelection ? this.shadowRoot.getSelection() : document.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const r = sel.getRangeAt(0);
+          if (titleEl.contains(r.startContainer) || titleEl === r.startContainer) {
+            text = text.split('\n')[0];
+          }
         }
-      });
+      }
 
-      pasteRange.insertNode(frag);
-      pasteRange.collapse(false);
-      const sel2 = window.getSelection();
-      if (sel2) { sel2.removeAllRanges(); sel2.addRange(pasteRange); }
+      // insertText fügt an der aktuellen Cursor-Position ein (nativ, zuverlässig)
+      document.execCommand('insertText', false, text);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
