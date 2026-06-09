@@ -30,6 +30,7 @@ class TodoListPanel extends HTMLElement {
     this._dragCurrentY    = 0;
     this._dragTimer       = null;
     this._dragTargetIdx   = -1;
+    this._itemLastModified = new Map(); // uid → Date
   }
 
   // ── HASS ─────────────────────────────────────────────────
@@ -338,6 +339,7 @@ class TodoListPanel extends HTMLElement {
     );
     this._detailTodo     = { ...todo, summary: newTitle, description: newNotes };
     this._detailEditMode = false;
+    this._itemLastModified.set(todo.uid, new Date());  // Änderungszeitpunkt merken
     if (closeAfter) { this._closeDetail(); } else { this._renderDetailMode(); }
     this._renderList();
 
@@ -448,6 +450,38 @@ class TodoListPanel extends HTMLElement {
       ? this._linkify(this._esc(notesRaw)).split('\n').join('<br>')
       : '';
     bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
+  }
+
+  _showInfoPopup() {
+    const todo = this._detailTodo;
+    if (!todo) return;
+    const lastMod = this._itemLastModified.get(todo.uid);
+    const fmt = d => d.toLocaleString('de-DE', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    const modLine = lastMod
+      ? `<p><strong>Letzte Änderung:</strong><br>${fmt(lastMod)}</p>`
+      : `<p style="color:var(--secondary-text-color,#888);font-size:0.9rem">Noch keine Änderung in dieser Sitzung</p>`;
+
+    const overlay = this.shadowRoot.getElementById('dialog-overlay');
+    const box     = this.shadowRoot.getElementById('dialog-box');
+    box.innerHTML = `
+      <h3 style="margin:0 0 1rem">Info</h3>
+      ${modLine}
+      <div style="display:flex;justify-content:flex-end;margin-top:1.25rem">
+        <button id="info-close-btn" style="
+          padding:0.45rem 1.2rem;border:none;border-radius:8px;
+          background:var(--primary-color,#1976d2);color:#fff;
+          font-size:0.95rem;cursor:pointer;">OK</button>
+      </div>`;
+    overlay.classList.add('open');
+    box.querySelector('#info-close-btn').addEventListener('click', () => {
+      overlay.classList.remove('open');
+    });
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) overlay.classList.remove('open');
+    }, { once: true });
   }
 
   // Wandelt contenteditable-HTML in plain text um
@@ -2357,6 +2391,7 @@ class TodoListPanel extends HTMLElement {
                 <ha-icon icon="mdi:dots-vertical"></ha-icon>
               </ha-icon-button>
               <div class="detail-dropdown" id="detail-dropdown">
+                <button id="detail-info-btn">Info</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2614,10 +2649,16 @@ class TodoListPanel extends HTMLElement {
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
+    const infoBtn    = this.shadowRoot.getElementById('detail-info-btn');
 
     menuBtn.addEventListener('click', e => {
       e.stopPropagation();
       dropdown.classList.toggle('open');
+    });
+
+    infoBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      this._showInfoPopup();
     });
 
     deleteBtn.addEventListener('click', () => {
