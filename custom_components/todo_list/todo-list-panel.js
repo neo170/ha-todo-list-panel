@@ -2598,6 +2598,8 @@ class TodoListPanel extends HTMLElement {
                 <button id="detail-info-btn">Info</button>
                 <button id="detail-due-btn">Fälligkeit</button>
                 <button id="detail-cb-btn">Checkbox</button>
+                <button id="detail-lock-btn">Edit Lock</button>
+                <button id="detail-reset-cb-btn">Reset Checkboxes</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2788,6 +2790,7 @@ class TodoListPanel extends HTMLElement {
     const detailBox = this.shadowRoot.getElementById('detail-box');
     detailBox.addEventListener('mousedown', (e) => {
       if (e.target.closest('.cb-box')) return; // Checkbox-Klick → kein Edit-Modus
+      if (this._editLocked) return; // Edit Lock aktiv → kein Edit-Modus
       if (!this._detailEditMode) {
         this._detailEditMode     = true;
         this._editEnteredByClick = true;
@@ -2855,6 +2858,45 @@ class TodoListPanel extends HTMLElement {
     cbBtn.addEventListener('click', () => {
       dropdown.classList.remove('open');
       this._insertCheckbox();
+    });
+
+    const lockBtn = this.shadowRoot.getElementById('detail-lock-btn');
+    const resetCbBtn = this.shadowRoot.getElementById('detail-reset-cb-btn');
+
+    // Edit Lock Toggle
+    lockBtn.addEventListener('click', () => {
+      this._editLocked = !this._editLocked;
+      lockBtn.textContent = this._editLocked ? '\u2705 Edit Lock' : 'Edit Lock';
+      // Wenn gerade im Edit-Modus → speichern und zurück in Display
+      if (this._editLocked && this._detailEditMode) {
+        this._saveDetail();
+      }
+      dropdown.classList.remove('open');
+    });
+
+    // Reset Checkboxes: alle ☑ → ☐
+    resetCbBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      const todo = this._detailTodo;
+      if (!todo || !todo.description) return;
+      const newDesc = todo.description.replace(/\u2611/g, '\u2610');
+      if (newDesc === todo.description) return;
+      todo.description = newDesc;
+      this._detailTodo = { ...todo };
+      this._todos = this._todos.map(t => t.uid === todo.uid ? { ...t, description: newDesc } : t);
+      this._renderDetailMode();
+      this._renderList();
+      // Im Hintergrund speichern
+      const duePayload = todo.due
+        ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
+        : {};
+      this._hass.callService('todo', 'update_item', {
+        entity_id: this._selected,
+        item: todo.uid,
+        rename: todo.summary,
+        description: newDesc,
+        ...duePayload,
+      }).catch(() => {});
     });
 
     // Klick auf ☐/☑ span – Zustand umschalten und speichern
