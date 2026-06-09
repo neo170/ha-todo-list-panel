@@ -2220,6 +2220,7 @@ class TodoListPanel extends HTMLElement {
         .detail-content {
           padding: 1.25rem 1rem;
           flex: 1;
+          min-height: 0;        /* wichtig: erlaubt overflow-y:auto im flex-child */
           overflow-y: auto;
           max-width: 520px;
           width: 100%;
@@ -2552,6 +2553,13 @@ class TodoListPanel extends HTMLElement {
     const boxNotes = this.shadowRoot.getElementById('detail-box-notes');
     boxTitle.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); boxNotes.focus(); }
+    });
+
+    // Tastaturteignisse nicht an HA weiterleiten (verhindert Assist-Popup bei 'a' etc.)
+    [boxTitle, boxNotes].forEach(el => {
+      el.addEventListener('keydown',  e => e.stopImmediatePropagation());
+      el.addEventListener('keypress', e => e.stopImmediatePropagation());
+      el.addEventListener('keyup',    e => e.stopImmediatePropagation());
     });
 
     // Paste: nur Plain Text; im Titel nur erste Zeile
