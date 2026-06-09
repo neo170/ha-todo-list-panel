@@ -2812,18 +2812,26 @@ class TodoListPanel extends HTMLElement {
     const bodyEl = this.shadowRoot.getElementById('detail-box-body');
 
     // Tastatur: HA-Assist-Intercept + Enter-Verhalten
+    // Cursor-Position bei jeder Bewegung speichern (mouseup, keyup, Ctrl+V keydown)
+    // damit paste sie unabhängig vom Auslöser (Tastatur oder Kontextmenü) nutzen kann.
+    const _savePasteRange = () => {
+      const s = window.getSelection();
+      if (!s || !s.rangeCount) return;
+      try {
+        const r = s.getRangeAt(0);
+        const n = r.startContainer;
+        if (n === bodyEl || bodyEl.contains(n)) {
+          this._savedPasteRange = r.cloneRange();
+        }
+      } catch (_) {}
+    };
+    bodyEl.addEventListener('mouseup', _savePasteRange);
+    bodyEl.addEventListener('click',   _savePasteRange);
+
     bodyEl.addEventListener('keydown', e => {
       e.stopImmediatePropagation();
-      // Ctrl+V: Range JETZT sichern – keydown feuert vor paste, Selection ist noch intakt
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
-        const s = window.getSelection();
-        if (s && s.rangeCount > 0) {
-          const r = s.getRangeAt(0);
-          const n = r.startContainer;
-          if (n === bodyEl || bodyEl.contains(n)) {
-            this._pendingPasteRange = r.cloneRange();
-          }
-        }
+        _savePasteRange(); // Range unmittelbar vor Paste sichern
       }
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -2842,27 +2850,24 @@ class TodoListPanel extends HTMLElement {
       }
     });
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
-    bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
+    bodyEl.addEventListener('keyup', e => {
+      e.stopImmediatePropagation();
+      _savePasteRange(); // Cursor nach Pfeiltasten etc. sichern
+    });
 
-    // Paste: _pendingPasteRange (aus keydown) nutzen, Fallback Ende der Notiz.
+    // Paste: gespeicherte Range verwenden, Fallback: Ende der Notiz
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
 
-      let text = (e.clipboardData.getData('text/plain') || '')
-        .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
-
-      const titleEl2 = bodyEl.querySelector('.title-line');
-
-      // Range aus keydown verwenden (zuverlässigstes Timing)
       let pasteRange = null;
-      const pending = this._pendingPasteRange;
-      this._pendingPasteRange = null;
-      if (pending) {
+      if (this._savedPasteRange) {
         try {
-          const n = pending.startContainer;
-          if (n === bodyEl || bodyEl.contains(n)) pasteRange = pending;
+          const n = this._savedPasteRange.startContainer;
+          if (n === bodyEl || bodyEl.contains(n)) {
+            pasteRange = this._savedPasteRange.cloneRange();
+          }
         } catch (_) {}
+        this._savedPasteRange = null;
       }
       if (!pasteRange) {
         pasteRange = document.createRange();
@@ -2870,13 +2875,17 @@ class TodoListPanel extends HTMLElement {
         pasteRange.collapse(false);
       }
 
+      let text = (e.clipboardData.getData('text/plain') || '')
+        .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
+
+      const titleEl2 = bodyEl.querySelector('.title-line');
       const inTitle = titleEl2 &&
         (titleEl2.contains(pasteRange.startContainer) || titleEl2 === pasteRange.startContainer);
       if (inTitle) text = text.split('\n')[0];
 
       pasteRange.deleteContents();
 
-      // Fragment: ☐/☑ → sofort als styled cb-box Span, Rest als Textknoten
       const lines = text.split('\n');
       const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
