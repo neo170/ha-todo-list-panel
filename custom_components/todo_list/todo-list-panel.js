@@ -420,14 +420,19 @@ class TodoListPanel extends HTMLElement {
       // Notizen: Zeilenumbrüche → <br>
       notesEl.innerHTML = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
 
-      setTimeout(() => {
-        titleEl.focus();
-        const range = document.createRange();
-        range.selectNodeContents(titleEl);
-        range.collapse(false);
-        const sel = window.getSelection();
-        if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-      }, 30);
+      // Cursor nur programmatisch setzen wenn NICHT per Mausklick eingestiegen
+      // (beim Klick setzt der Browser den Cursor selbst an die Klickposition)
+      if (!this._editEnteredByClick) {
+        setTimeout(() => {
+          titleEl.focus();
+          const range = document.createRange();
+          range.selectNodeContents(titleEl);
+          range.collapse(false);
+          const sel = window.getSelection();
+          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+        }, 30);
+      }
+      this._editEnteredByClick = false;
     } else {
       box.classList.remove('editing');
       titleEl.contentEditable = 'false';
@@ -1442,6 +1447,12 @@ class TodoListPanel extends HTMLElement {
           flex-direction: column;
           background: var(--primary-background-color, #f0f4f8);
           overflow: hidden;
+        }
+
+        /* Detail-Panel braucht eine feste Höhe damit detail-content korrekt scrollt */
+        #detail-panel {
+          height: 100%;
+          min-height: 0;
         }
 
         /* ── App-Layout (Desktop: Sidebar + Main) ── */
@@ -2533,11 +2544,12 @@ class TodoListPanel extends HTMLElement {
       }
     });
 
-    // Detail-Box: Klick → Edit-Modus
+    // Detail-Box: Klick → Edit-Modus; Flag setzen damit Cursor-Position erhalten bleibt
     const detailBox = this.shadowRoot.getElementById('detail-box');
     detailBox.addEventListener('click', () => {
       if (!this._detailEditMode) {
         this._detailEditMode = true;
+        this._editEnteredByClick = true;
         this._renderDetailMode();
       }
     });
