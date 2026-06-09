@@ -2569,6 +2569,9 @@ class TodoListPanel extends HTMLElement {
       e.stopImmediatePropagation();
       if (e.key === 'Enter') {
         e.preventDefault();
+        // Scroll-Position vor DOM-Änderung sichern; Browser würde sonst asynchron
+        // den äußeren HA-Container scrollen statt des inneren detail-content
+        const savedScrollY = window.scrollY;
         const titleDiv = bodyEl.querySelector('.title-line');
         const sel = window.getSelection();
         if (!sel || !sel.rangeCount) return;
@@ -2589,6 +2592,8 @@ class TodoListPanel extends HTMLElement {
           sel.removeAllRanges();
           sel.addRange(range);
         }
+        // HA-Seite zurücksetzen, detail-content scrollt intern zum Cursor
+        requestAnimationFrame(() => window.scrollTo(0, savedScrollY));
       }
     });
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
