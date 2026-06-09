@@ -2835,9 +2835,10 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: Plain Text an exakter Cursor-Position einfügen.
-    // range.insertNode() ist zuverlässiger als execCommand wenn contenteditable="false"
-    // Spans im ContentEditable sind (execCommand verliert dort den Cursor-Kontext).
+    // Paste: Plain Text an Cursor-Position im ContentEditable einfügen.
+    // execCommand('insertText') + execCommand('insertLineBreak') ist am zuverlässigsten
+    // in Shadow DOM; range.insertNode() kann auf das äußere Dokument zeigen.
+    // Guard: Cursor muss innerhalb von bodyEl sein, sonst ans Ende setzen.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       let text = (e.clipboardData.getData('text/plain') || '')
@@ -2847,27 +2848,31 @@ class TodoListPanel extends HTMLElement {
 
       const titleEl2 = bodyEl.querySelector('.title-line');
       const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return;
-      const range = sel.getRangeAt(0);
+
+      // Cursor-Position prüfen – muss in bodyEl liegen
+      const range = sel?.rangeCount ? sel.getRangeAt(0) : null;
+      if (!range || !bodyEl.contains(range.startContainer)) {
+        // Cursor nicht im Editor → ans Ende der Notiz setzen
+        bodyEl.focus();
+        const endRange = document.createRange();
+        endRange.selectNodeContents(bodyEl);
+        endRange.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(endRange);
+      }
 
       // Im Titel nur erste Zeile erlauben
+      const curRange = sel.getRangeAt(0);
       const inTitle = titleEl2 &&
-        (titleEl2.contains(range.startContainer) || titleEl2 === range.startContainer);
+        (titleEl2.contains(curRange.startContainer) || titleEl2 === curRange.startContainer);
       if (inTitle) text = text.split('\n')[0];
 
-      // Selektion löschen, dann Fragment an Cursor-Position einfügen
-      range.deleteContents();
+      // Einzeilig: direkt inserText; Mehrzeilig: Zeilen mit insertLineBreak trennen
       const lines = text.split('\n');
-      const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
-        if (i > 0) frag.appendChild(document.createElement('br'));
-        if (line) frag.appendChild(document.createTextNode(line));
+        if (i > 0) document.execCommand('insertLineBreak');
+        if (line) document.execCommand('insertText', false, line);
       });
-      range.insertNode(frag);
-      // Cursor ans Ende des eingefügten Inhalts setzen
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
