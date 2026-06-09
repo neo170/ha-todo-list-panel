@@ -319,10 +319,15 @@ class TodoListPanel extends HTMLElement {
     const todo = this._detailTodo;
     if (!todo) return;
 
-    const titleEl = this.shadowRoot.getElementById('detail-box-title');
-    const notesEl  = this.shadowRoot.getElementById('detail-box-notes');
-    const newTitle = titleEl ? (titleEl.textContent.trim() || todo.summary) : todo.summary;
-    const newNotes = notesEl ? this._ceToText(notesEl) : (todo.description ?? '');
+    const bodyEl   = this.shadowRoot.getElementById('detail-box-body');
+    const titleDiv  = bodyEl?.querySelector('.title-line');
+    const newTitle  = titleDiv ? (titleDiv.textContent.trim() || todo.summary) : todo.summary;
+    let newNotes = todo.description ?? '';
+    if (bodyEl) {
+      const clone = bodyEl.cloneNode(true);
+      clone.querySelector('.title-line')?.remove();
+      newNotes = this._ceToText(clone);
+    }
 
     // Optimistisch: lokalen State sofort updaten
     this._todos = this._todos.map(t =>
@@ -399,50 +404,48 @@ class TodoListPanel extends HTMLElement {
   }
 
   _renderDetailMode() {
-    const todo    = this._detailTodo;
-    const edit    = this._detailEditMode;
-    const box     = this.shadowRoot.getElementById('detail-box');
-    const titleEl = this.shadowRoot.getElementById('detail-box-title');
-    const notesEl = this.shadowRoot.getElementById('detail-box-notes');
-    if (!box || !titleEl || !notesEl) return;
+    const todo   = this._detailTodo;
+    const edit   = this._detailEditMode;
+    const box    = this.shadowRoot.getElementById('detail-box');
+    const bodyEl = this.shadowRoot.getElementById('detail-box-body');
+    if (!box || !bodyEl) return;
 
     if (edit) {
       box.classList.add('editing');
-      titleEl.contentEditable = 'true';
-      notesEl.contentEditable = 'true';
+      bodyEl.contentEditable = 'true';
+      // Titel als .title-line div, Notizen als <br>-getrennter Text danach
+      const notesHtml = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
+      bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
 
-      // Titel als plain text setzen
-      titleEl.textContent = todo.summary ?? '';
-      // Notizen: Zeilenumbrüche → <br>
-      notesEl.innerHTML = (todo.description ?? '').split('\n').map(l => this._esc(l)).join('<br>');
-
-      // Cursor programmatisch setzen wenn NICHT per Mausklick eingestiegen
-      // (beim Klick übernimmt _placeCaretAt die Cursor-Position)
       if (!this._editEnteredByClick) {
         setTimeout(() => {
-          titleEl.focus();
-          const range = document.createRange();
-          range.selectNodeContents(titleEl);
-          range.collapse(false);
-          const sel = window.getSelection();
-          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          const titleDiv = bodyEl.querySelector('.title-line');
+          if (titleDiv) {
+            titleDiv.focus();
+            const range = document.createRange();
+            range.selectNodeContents(titleDiv);
+            range.collapse(false);
+            const sel = window.getSelection();
+            if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+          }
         }, 30);
       }
       this._editEnteredByClick = false;
     } else {
       box.classList.remove('editing');
-      titleEl.contentEditable = 'false';
-      notesEl.contentEditable = 'false';
+      bodyEl.contentEditable = 'false';
       this._renderDisplay(todo);
     }
   }
 
   _renderDisplay(todo) {
-    const titleEl = this.shadowRoot.getElementById('detail-box-title');
-    const notesEl = this.shadowRoot.getElementById('detail-box-notes');
-    if (!titleEl || !notesEl) return;
-    titleEl.textContent = todo.summary ?? '';
-    notesEl.innerHTML   = todo.description ? this._linkify(this._esc(todo.description)) : '';
+    const bodyEl = this.shadowRoot.getElementById('detail-box-body');
+    if (!bodyEl) return;
+    const notesRaw = todo.description ?? '';
+    const notesHtml = notesRaw
+      ? this._linkify(this._esc(notesRaw)).split('\n').join('<br>')
+      : '';
+    bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml}`;
   }
 
   // Wandelt contenteditable-HTML in plain text um
@@ -2254,35 +2257,31 @@ class TodoListPanel extends HTMLElement {
           border-color: #1976d2;
         }
 
-        .detail-box-title {
+        .detail-box-body {
+          font-size: 1rem;
+          color: var(--primary-text-color, #333);
+          line-height: 1.6;
+          word-break: break-word;
+          outline: none;
+          min-height: 4rem;
+          caret-color: #1976d2;
+        }
+
+        .detail-box-body .title-line {
           font-size: 1.35rem;
           font-weight: 700;
           color: var(--primary-text-color, #222);
           line-height: 1.3;
-          margin-bottom: 0.5rem;
+          margin-bottom: 0.4rem;
           word-break: break-word;
-          outline: none;
-          min-height: 1.5em;
-          caret-color: #1976d2;
         }
 
-        .detail-box-notes {
-          font-size: 1rem;
-          color: var(--primary-text-color, #333);
-          line-height: 1.6;
-          white-space: pre-wrap;
-          word-break: break-word;
-          outline: none;
-          min-height: 3rem;
-          caret-color: #1976d2;
-        }
-
-        .detail-box-notes a {
+        .detail-box-body a {
           color: #1976d2;
           text-decoration: underline;
           word-break: break-all;
         }
-        .detail-box.editing .detail-box-notes a {
+        .detail-box.editing .detail-box-body a {
           pointer-events: none;
         }
 
@@ -2364,8 +2363,7 @@ class TodoListPanel extends HTMLElement {
 
         <div class="detail-content" id="detail-content">
           <div id="detail-box" class="detail-box">
-            <div id="detail-box-title" class="detail-box-title" contenteditable="false" spellcheck="true"></div>
-            <div id="detail-box-notes" class="detail-box-notes" contenteditable="false" spellcheck="true"></div>
+            <div id="detail-box-body" class="detail-box-body" contenteditable="false" spellcheck="true"></div>
           </div>
         </div>
       </div>
@@ -2563,68 +2561,61 @@ class TodoListPanel extends HTMLElement {
       if (this._detailEditMode) this._saveDetail();
     });
 
-    // Enter in Titel → Fokus auf Notizen
-    // Ctrl/Cmd+A → alles auswählen (titel UND notizen), damit man beides auf einmal kopieren kann
-    const boxTitle = this.shadowRoot.getElementById('detail-box-title');
-    const boxNotes = this.shadowRoot.getElementById('detail-box-notes');
-    [boxTitle, boxNotes].forEach(el => {
-      el.addEventListener('keydown', e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-          e.preventDefault();
-          const range = document.createRange();
-          range.setStart(boxTitle, 0);
-          range.setEnd(boxNotes, boxNotes.childNodes.length);
-          const sel = window.getSelection();
-          if (sel) { sel.removeAllRanges(); sel.addRange(range); }
-        } else if (el === boxTitle && e.key === 'Enter') {
-          e.preventDefault();
-          boxNotes.focus();
-        }
-        e.stopImmediatePropagation();
-      });
-      el.addEventListener('keypress', e => e.stopImmediatePropagation());
-      el.addEventListener('keyup',    e => e.stopImmediatePropagation());
-    });
+    // Einziges contenteditable-Div für Titel + Notizen → native Mauswahl über alles
+    const bodyEl = this.shadowRoot.getElementById('detail-box-body');
 
-    // Copy über Titelgrenze hinweg: korrekten Plaintext in Zwischenablage schreiben
-    detailBox.addEventListener('copy', e => {
-      if (!this._detailEditMode) return;
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      const range = sel.getRangeAt(0);
-      const startsInTitle = boxTitle.contains(range.startContainer) || boxTitle === range.startContainer;
-      const endsInNotes   = boxNotes.contains(range.endContainer)   || boxNotes === range.endContainer;
-      if (startsInTitle && endsInNotes) {
-        const titleText = boxTitle.textContent;
-        const notesText = this._ceToText(boxNotes);
-        e.clipboardData.setData('text/plain', titleText + (notesText ? '\n' + notesText : ''));
+    // Tastatur: HA-Assist-Intercept + Enter-Verhalten
+    bodyEl.addEventListener('keydown', e => {
+      e.stopImmediatePropagation();
+      if (e.key === 'Enter') {
         e.preventDefault();
-      }
-    });
-
-    // Paste: nur Plain Text; im Titel nur erste Zeile
-    // Zeilenenden normalisieren, dann sauber als DOM-Fragment einfügen (konsistente <br>-Elemente)
-    [boxTitle, boxNotes].forEach(el => {
-      el.addEventListener('paste', e => {
-        e.preventDefault();
-        let text = (e.clipboardData.getData('text/plain') || '')
-          .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        if (el === boxTitle) text = text.split('\n')[0];
+        const titleDiv = bodyEl.querySelector('.title-line');
         const sel = window.getSelection();
         if (!sel || !sel.rangeCount) return;
         const range = sel.getRangeAt(0);
-        range.deleteContents();
-        const lines = text.split('\n');
-        const frag = document.createDocumentFragment();
-        lines.forEach((line, i) => {
-          if (i > 0) frag.appendChild(document.createElement('br'));
-          if (line) frag.appendChild(document.createTextNode(line));
-        });
-        range.insertNode(frag);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
+        if (titleDiv && (titleDiv.contains(range.startContainer) || titleDiv === range.startContainer)) {
+          // Im Titel: Cursor hinter das title-line-Div verschieben (Beginn der Notizen)
+          range.setStartAfter(titleDiv);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          // In Notizen: <br> einfügen statt Browser-Default (verhindert unkontrollierte <div>-Wrappers)
+          range.deleteContents();
+          const br = document.createElement('br');
+          range.insertNode(br);
+          range.setStartAfter(br);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    });
+    bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
+    bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
+
+    // Paste: nur Plain Text; im Titel-Div nur erste Zeile
+    bodyEl.addEventListener('paste', e => {
+      e.preventDefault();
+      let text = (e.clipboardData.getData('text/plain') || '')
+        .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const titleDiv = bodyEl.querySelector('.title-line');
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      const inTitle = titleDiv && (titleDiv.contains(range.startContainer) || titleDiv === range.startContainer);
+      if (inTitle) text = text.split('\n')[0];
+      range.deleteContents();
+      const lines = text.split('\n');
+      const frag = document.createDocumentFragment();
+      lines.forEach((line, i) => {
+        if (i > 0) frag.appendChild(document.createElement('br'));
+        if (line) frag.appendChild(document.createTextNode(line));
       });
+      range.insertNode(frag);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
     });
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
