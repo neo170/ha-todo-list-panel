@@ -329,6 +329,10 @@ class TodoListPanel extends HTMLElement {
       if (cloneTitle) clone.removeChild(cloneTitle);
       newNotes = this._ceToText(clone);
     }
+    // #Editlock-Tag wieder anhängen falls aktiv
+    if (this._editLocked) {
+      newNotes = newNotes ? newNotes + '\n#Editlock' : '#Editlock';
+    }
 
     // Optimistisch: lokalen State sofort updaten
     this._todos = this._todos.map(t =>
@@ -406,6 +410,12 @@ class TodoListPanel extends HTMLElement {
     if (titleEl && currentList) {
       titleEl.innerHTML = `<ha-icon icon="${currentList.icon}"></ha-icon><span>${this._esc(currentList.name)}</span>`;
     }
+    // Edit Lock aus Description lesen
+    const desc = this._detailTodo?.description ?? '';
+    this._editLocked = /\n#Editlock$/.test(desc) || desc === '#Editlock';
+    const lockBtn = this.shadowRoot.getElementById('detail-lock-btn');
+    if (lockBtn) lockBtn.textContent = this._editLocked ? '\u2705 Edit Lock' : 'Edit Lock';
+
     this.shadowRoot.getElementById('slider').classList.add('show-detail');
     this.shadowRoot.getElementById('detail-content').scrollTop = 0;
     this._renderDetailMode();
@@ -424,7 +434,9 @@ class TodoListPanel extends HTMLElement {
       bodyEl.contentEditable = 'plaintext-only';
       // Chrome plaintext-only nutzt intern <div> pro Zeile. Wir setzen das gleiche
       // Format direkt, um Doppel-Zeilenumbrüche durch DOM-Normalisierung zu vermeiden.
-      const lines = (todo.description ?? '').split('\n');
+      // #Editlock-Tag aus Edit-Anzeige entfernen
+      const descForEdit = (todo.description ?? '').replace(/\n#Editlock$/, '').replace(/^#Editlock$/, '');
+      const lines = descForEdit.split('\n');
       const notesHtml = lines.map(l => `<div>${this._renderNotesLineEdit(l) || '<br>'}</div>`).join('');
       bodyEl.innerHTML = `<div class="title-line">${this._esc(todo.summary ?? '')}</div>${notesHtml || '<div><br></div>'}`;
 
@@ -452,7 +464,8 @@ class TodoListPanel extends HTMLElement {
   _renderDisplay(todo) {
     const bodyEl = this.shadowRoot.getElementById('detail-box-body');
     if (!bodyEl) return;
-    const notesRaw = todo.description ?? '';
+    // #Editlock-Tag aus Anzeige entfernen
+    const notesRaw = (todo.description ?? '').replace(/\n#Editlock$/, '').replace(/^#Editlock$/, '');
     const notesHtml = notesRaw
       ? notesRaw.split('\n').map(l => this._renderNotesLineDisplay(l)).join('<br>')
       : '';
@@ -2870,6 +2883,32 @@ class TodoListPanel extends HTMLElement {
       // Wenn gerade im Edit-Modus → speichern und zurück in Display
       if (this._editLocked && this._detailEditMode) {
         this._saveDetail();
+      }
+      // #Editlock Tag in Description hinzufügen/entfernen
+      const todo = this._detailTodo;
+      if (todo) {
+        let desc = todo.description ?? '';
+        // Alten Tag entfernen
+        desc = desc.replace(/\n#Editlock$/, '').replace(/^#Editlock$/, '');
+        // Neuen Tag hinzufügen wenn aktiviert
+        if (this._editLocked) {
+          desc = desc ? desc + '\n#Editlock' : '#Editlock';
+        }
+        todo.description = desc;
+        this._detailTodo = { ...todo };
+        this._todos = this._todos.map(t => t.uid === todo.uid ? { ...t, description: desc } : t);
+        this._renderDetailMode();
+        // Im Hintergrund speichern
+        const duePayload = todo.due
+          ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
+          : {};
+        this._hass.callService('todo', 'update_item', {
+          entity_id: this._selected,
+          item: todo.uid,
+          rename: todo.summary,
+          description: desc,
+          ...duePayload,
+        }).catch(() => {});
       }
       dropdown.classList.remove('open');
     });
