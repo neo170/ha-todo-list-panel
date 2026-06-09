@@ -412,6 +412,7 @@ class TodoListPanel extends HTMLElement {
   }
 
   _renderDetailMode() {
+    this._lastBodyRange = null; // DOM wird neu gebaut → alte Range ungültig
     const todo   = this._detailTodo;
     const edit   = this._detailEditMode;
     const box    = this.shadowRoot.getElementById('detail-box');
@@ -2835,47 +2836,52 @@ class TodoListPanel extends HTMLElement {
     bodyEl.addEventListener('keypress', e => e.stopImmediatePropagation());
     bodyEl.addEventListener('keyup',    e => e.stopImmediatePropagation());
 
-    // Paste: Range SOFORT am Event-Anfang sichern – focus() würde sie zurücksetzen.
+    // Cursor-Position persistent tracken: selectionchange speichert die letzte
+    // gültige Range in bodyEl, damit paste-Event sie zuverlässig nutzen kann.
+    document.addEventListener('selectionchange', () => {
+      const s = window.getSelection();
+      if (!s || !s.rangeCount) return;
+      const r = s.getRangeAt(0);
+      const n = r.startContainer;
+      if (n === bodyEl || bodyEl.contains(n)) {
+        this._lastBodyRange = r.cloneRange();
+      }
+    });
+
+    // Paste: _lastBodyRange nutzen (vom selectionchange gespeichert),
+    // Fallback: Ende der Notiz.
     bodyEl.addEventListener('paste', e => {
       e.preventDefault();
       e.stopPropagation();
 
-      // 1. Range JETZT sichern (vor jedem focus/removeAllRanges)
-      const sel = window.getSelection();
-      let pasteRange = null;
-      if (sel && sel.rangeCount > 0) {
-        const r = sel.getRangeAt(0);
-        const startNode = r.startContainer;
-        if (startNode.nodeType === 1 && startNode.classList?.contains('cb-box')) {
-          // Cursor auf non-editable Span → direkt dahinter
-          pasteRange = document.createRange();
-          pasteRange.setStartAfter(startNode);
-          pasteRange.collapse(true);
-        } else if (bodyEl === startNode || bodyEl.contains(startNode)) {
-          pasteRange = r.cloneRange();
-        }
-      }
-      if (!pasteRange) {
-        // Kein Cursor im Editor → ans Ende der Notiz
-        pasteRange = document.createRange();
-        pasteRange.selectNodeContents(bodyEl);
-        pasteRange.collapse(false);
-      }
-
-      // 2. Text aufbereiten
       let text = (e.clipboardData.getData('text/plain') || '')
         .replace(/\r\n/g, '\n').replace(/\r/g, '\n');
       text = text.replace(/([\u2610\u2611])(?! )/g, '$1 ');
 
       const titleEl2 = bodyEl.querySelector('.title-line');
+
+      // Gespeicherte Range verwenden
+      let pasteRange = null;
+      if (this._lastBodyRange) {
+        try {
+          const n = this._lastBodyRange.startContainer;
+          if (n === bodyEl || bodyEl.contains(n)) {
+            pasteRange = this._lastBodyRange.cloneRange();
+          }
+        } catch (_) { pasteRange = null; }
+      }
+      if (!pasteRange) {
+        pasteRange = document.createRange();
+        pasteRange.selectNodeContents(bodyEl);
+        pasteRange.collapse(false);
+      }
+
       const inTitle = titleEl2 &&
         (titleEl2.contains(pasteRange.startContainer) || titleEl2 === pasteRange.startContainer);
       if (inTitle) text = text.split('\n')[0];
 
-      // 3. Markierten Inhalt löschen (Ersetzen)
       pasteRange.deleteContents();
 
-      // 4. Fragment aufbauen: ☐/☑ → Span-Nodes, Rest als Textknoten
       const lines = text.split('\n');
       const frag = document.createDocumentFragment();
       lines.forEach((line, i) => {
@@ -2895,12 +2901,14 @@ class TodoListPanel extends HTMLElement {
         }
       });
 
-      // 5. An gesicherter Cursor-Position einfügen (KEIN focus() dazwischen!)
       pasteRange.insertNode(frag);
       pasteRange.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(pasteRange);
+      const sel2 = window.getSelection();
+      sel2.removeAllRanges();
+      sel2.addRange(pasteRange);
     });
+
+    const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
 
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
