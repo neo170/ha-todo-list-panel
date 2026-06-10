@@ -105,6 +105,15 @@ class TodoListPanel extends HTMLElement {
     this._domReady = true;
     if (this._selected) this._subscribeItems();
 
+    // Browser-Back-Button: Detail schließen statt Seite verlassen
+    this._popstateHandler = (e) => {
+      const slider = this.shadowRoot.getElementById('slider');
+      if (slider?.classList.contains('show-detail')) {
+        this._closeDetail(true); // true = skipHistory, da popstate den Eintrag schon entfernt hat
+      }
+    };
+    window.addEventListener('popstate', this._popstateHandler);
+
     // Nach App-Resume (iOS Lockscreen, Tab-Wechsel): Subscription neu aufbauen
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this._selected) {
@@ -418,6 +427,7 @@ class TodoListPanel extends HTMLElement {
 
     this.shadowRoot.getElementById('slider').classList.add('show-detail');
     this.shadowRoot.getElementById('detail-content').scrollTop = 0;
+    history.pushState({ todoDetail: true }, '');
     this._renderDetailMode();
   }
 
@@ -1251,10 +1261,15 @@ class TodoListPanel extends HTMLElement {
     });
   }
 
-  _closeDetail() {
+  _closeDetail(skipHistory) {
     this.shadowRoot.getElementById('slider').classList.remove('show-detail');
     this._detailTodo     = null;
     this._detailEditMode = false;
+
+    // History-Eintrag entfernen (außer wenn durch popstate ausgelöst)
+    if (!skipHistory && history.state?.todoDetail) {
+      history.back();
+    }
 
     // Wenn aus Suche geöffnet (mobile oder sidebar), nichts zurücksetzen
     if (this._searchReturnToResults) {
