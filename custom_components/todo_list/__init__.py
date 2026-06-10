@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 
 DOMAIN = "todo_list"
 REGISTERED_KEY = f"{DOMAIN}_panel_registered"
-STATIC_PATH = "/todo_list_panel"
+STATIC_PATH_BASE = "/todo_list_panel"
 
 
 def _read_manifest_version(manifest_path: Path) -> str:
@@ -27,6 +27,13 @@ async def _register_panel(hass: HomeAssistant) -> None:
     manifest_path = Path(__file__).parent / "manifest.json"
     version = await hass.async_add_executor_job(_read_manifest_version, manifest_path)
 
+    # Version im Pfad statt Query-Param → umgeht Service-Worker-Cache
+    static_path = f"{STATIC_PATH_BASE}/{version}"
+
+    await hass.http.async_register_static_paths([
+        StaticPathConfig(static_path, str(Path(__file__).parent), False),
+    ])
+
     frontend.async_register_built_in_panel(
         hass,
         component_name="custom",
@@ -36,7 +43,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "todo-list-panel",
-                "module_url": f"{STATIC_PATH}/todo-list-panel.js?v={version}",
+                "module_url": f"{static_path}/todo-list-panel.js",
                 "embed_iframe": False,
                 "trust_external_script": True,
             }
@@ -48,10 +55,6 @@ async def _register_panel(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    # Static path hier registrieren: http-Komponente ist zu diesem Zeitpunkt garantiert bereit
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(STATIC_PATH, str(Path(__file__).parent), False),
-    ])
     if DOMAIN in config:
         await _register_panel(hass)
     return True
