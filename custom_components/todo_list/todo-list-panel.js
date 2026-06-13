@@ -1,4 +1,4 @@
-const PANEL_VERSION = '1.0.123';
+const PANEL_VERSION = '1.0.124';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
@@ -442,6 +442,24 @@ class TodoListPanel extends HTMLElement {
         this._todos = backup;
         this._renderList();
         return;
+      }
+
+      // 2b. Neues Item im Papierkorb nach oben verschieben
+      const openItems = papierkorbItems.filter(i => i.status !== 'completed');
+      const newItem = openItems[openItems.length - 1];
+      if (newItem && openItems.length > 1) {
+        try {
+          await this._callWithTimeout(
+            this._hass.callWS({
+              type: 'todo/item/move',
+              entity_id: papierkorbId,
+              uid: newItem.uid,
+              previous_uid: undefined,
+            })
+          );
+        } catch (moveErr) {
+          console.warn('[TodoPanel] move-to-top in Papierkorb failed (non-critical):', moveErr);
+        }
       }
 
       // 3. Erst jetzt aus der Quellliste entfernen
