@@ -284,12 +284,35 @@ class TodoListPanel extends HTMLElement {
 
   // Aktualisiert den Badge der aktuellen Liste in der Sidebar direkt aus this._todos,
   // ohne die gesamte Sidebar neu zu rendern (verhindert Stale-Badge nach optimistischen Updates).
+  _getSidebarBadgeCount(list) {
+    if (!list) return 0;
+    const state = this._hass?.states?.[list.id];
+    const isCurrent = list.id === this._selected;
+    const isPapierkorb = this._isPapierkorbList(list.id);
+
+    if (isCurrent) {
+      if (isPapierkorb) {
+        return this._todos.length;
+      }
+      return this._todos.filter(t => t.status !== 'completed').length;
+    }
+
+    const count = state?.attributes?.items_not_completed
+      ?? state?.attributes?.pending_items;
+    if (count != null && !isNaN(count)) {
+      return count;
+    }
+    const parsed = parseInt(state?.state, 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
   _updateSidebarBadge() {
     const sidebar = this.shadowRoot.getElementById('sidebar');
     if (!sidebar || !this._selected) return;
     const btn = sidebar.querySelector(`.sidebar-item[data-id="${this._selected}"]`);
     if (!btn) return;
-    const count = this._todos.filter(t => t.status !== 'completed').length;
+    const list = this._lists.find(l => l.id === this._selected);
+    const count = this._getSidebarBadgeCount(list);
     let badge = btn.querySelector('.sidebar-item-badge');
     if (count > 0) {
       if (!badge) {
@@ -3133,13 +3156,9 @@ class TodoListPanel extends HTMLElement {
     if (!sidebar) return;
 
     // Offene Items pro Liste aus hass.states lesen (best-effort)
-    const openPerList = id => {
-      const state = this._hass?.states?.[id];
-      // Versuche verschiedene Attribute
-      const count = state?.attributes?.items_not_completed
-        ?? state?.attributes?.pending_items
-        ?? parseInt(state?.state, 10);
-      return isNaN(count) ? 0 : count;
+    const openPerList = list => {
+      if (!list) return 0;
+      return this._getSidebarBadgeCount(list);
     };
 
     // Sidebar-Items (Desktop) – direkt die Items, kein Heading
