@@ -305,19 +305,61 @@ class TodoListPanel extends HTMLElement {
 
   async _deleteTodo(uid) {
     if (!this._isOnline()) return;
-    // Item merken falls wir es wiederherstellen müssen
+
+    // Wenn wir bereits im Papierkorb sind → wirklich löschen
+    if (this._isPapierkorbList()) {
+      const backup = [...this._todos];
+      this._todos = this._todos.filter(t => t.uid !== uid);
+      this._renderList();
+      this._updateSidebarBadge();
+      try {
+        await this._callWithTimeout(
+          this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
+        );
+      } catch (e) {
+        console.warn('_deleteTodo failed/timeout:', e);
+        this._todos = backup;
+        this._renderList();
+      }
+      return;
+    }
+
+    // Sonst: in Papierkorb verschieben
+    const todo = this._todos.find(t => t.uid === uid);
+    if (!todo) return;
+
+    const papierkorbId = await this._getOrCreatePapierkorb();
     const backup = [...this._todos];
-    // Optimistisch: Sofort aus UI entfernen
     this._todos = this._todos.filter(t => t.uid !== uid);
     this._renderList();
     this._updateSidebarBadge();
+
+    if (!papierkorbId) {
+      // Fallback: wirklich löschen
+      try {
+        await this._callWithTimeout(
+          this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
+        );
+      } catch (e) {
+        this._todos = backup;
+        this._renderList();
+      }
+      return;
+    }
+
     try {
+      await this._callWithTimeout(
+        this._hass.callService('todo', 'add_item', {
+          entity_id: papierkorbId,
+          item: todo.summary,
+          ...(todo.description ? { description: todo.description } : {}),
+        })
+      );
       await this._callWithTimeout(
         this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
       );
     } catch (e) {
-      console.warn('_deleteTodo failed/timeout:', e);
-      // Löschen hat nicht geklappt → alten Stand wiederherstellen
+      console.warn('_deleteTodo (move to Papierkorb) failed:', e);
       this._todos = backup;
       this._renderList();
     }
@@ -424,6 +466,9 @@ class TodoListPanel extends HTMLElement {
     this._editLocked = /\n#Editlock$/.test(desc) || desc === '#Editlock';
     const lockBtn = this.shadowRoot.getElementById('detail-lock-btn');
     if (lockBtn) lockBtn.textContent = this._editLocked ? '\u2705 Edit Lock' : 'Edit Lock';
+
+    const restoreBtn = this.shadowRoot.getElementById('detail-restore-btn');
+    if (restoreBtn) restoreBtn.style.display = this._isPapierkorbList() ? '' : 'none';
 
     this.shadowRoot.getElementById('slider').classList.add('show-detail');
     this.shadowRoot.getElementById('detail-content').scrollTop = 0;
@@ -2711,6 +2756,7 @@ class TodoListPanel extends HTMLElement {
                 <button id="detail-lock-btn">Edit Lock</button>
                 <button id="detail-reset-cb-btn">Reset Checkboxes</button>
                 <button id="detail-replace-btn">Suchen &amp; Ersetzen</button>
+                <button id="detail-restore-btn" style="display:none">Wiederherstellen</button>
                 <button id="detail-delete-btn" class="menu-danger">Eintrag löschen</button>
               </div>
             </div>
@@ -2947,6 +2993,7 @@ class TodoListPanel extends HTMLElement {
     const menuBtn    = this.shadowRoot.getElementById('detail-menu-btn');
     const dropdown   = this.shadowRoot.getElementById('detail-dropdown');
     const deleteBtn  = this.shadowRoot.getElementById('detail-delete-btn');
+    const restoreBtn = this.shadowRoot.getElementById('detail-restore-btn');
     const infoBtn    = this.shadowRoot.getElementById('detail-info-btn');
     const dueBtn     = this.shadowRoot.getElementById('detail-due-btn');
     const cbBtn      = this.shadowRoot.getElementById('detail-cb-btn');
@@ -3061,6 +3108,11 @@ class TodoListPanel extends HTMLElement {
       if (!uid) return;
       this._closeDetail();
       this._animateAndDelete(uid);
+    });
+
+    restoreBtn.addEventListener('click', () => {
+      dropdown.classList.remove('open');
+      this._showRestoreDialog();
     });
 
     // Klick außerhalb → alle Dropdowns schließen + Swipe-Buttons zuklappen
@@ -3563,10 +3615,14 @@ class TodoListPanel extends HTMLElement {
     const completed = this._todos.filter(t => t.status === 'completed');
     if (completed.length === 0) return;
 
+    const inPapierkorb = this._isPapierkorbList();
+    const actionText   = inPapierkorb ? 'löschen' : 'in den Papierkorb verschieben';
+    const confirmLabel = inPapierkorb ? 'Löschen' : 'Verschieben';
+
     const confirmed = await this._showConfirm(
       'Erledigte To-Dos löschen',
-      `Willst du wirklich ${completed.length} erledigte To-Do${completed.length > 1 ? 's' : ''} löschen?`,
-      'Löschen'
+      `Willst du wirklich ${completed.length} erledigte To-Do${completed.length > 1 ? 's' : ''} ${actionText}?`,
+      confirmLabel
     );
     if (!confirmed) return;
 
@@ -3574,17 +3630,161 @@ class TodoListPanel extends HTMLElement {
     this._todos = this._todos.filter(t => t.status !== 'completed');
     this._renderList();
 
+    if (inPapierkorb) {
+      // Im Papierkorb → wirklich löschen
+      try {
+        for (const todo of completed) {
+          await this._callWithTimeout(
+            this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
+          );
+        }
+      } catch (e) {
+        console.warn('_deleteCompletedTodos failed/timeout:', e);
+        this._todos = backup;
+        this._renderList();
+        this._subscribeItems();
+      }
+    } else {
+      // Nicht im Papierkorb → in Papierkorb verschieben
+      const papierkorbId = await this._getOrCreatePapierkorb();
+      try {
+        for (const todo of completed) {
+          if (papierkorbId) {
+            await this._callWithTimeout(
+              this._hass.callService('todo', 'add_item', {
+                entity_id: papierkorbId,
+                item: todo.summary,
+                ...(todo.description ? { description: todo.description } : {}),
+              })
+            );
+          }
+          await this._callWithTimeout(
+            this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
+          );
+        }
+      } catch (e) {
+        console.warn('_deleteCompletedTodos (move to Papierkorb) failed/timeout:', e);
+        this._todos = backup;
+        this._renderList();
+        this._subscribeItems();
+      }
+    }
+  }
+
+  // ── Papierkorb-Hilfsmethoden ────────────────────────────
+
+  _isPapierkorbList(listId = this._selected) {
+    const list = this._lists.find(l => l.id === listId);
+    return list?.name?.toLowerCase() === 'papierkorb';
+  }
+
+  async _getOrCreatePapierkorb() {
+    // Bereits vorhanden?
+    const existing = this._lists.find(l => l.name.toLowerCase() === 'papierkorb');
+    if (existing) return existing.id;
+
+    // Direkt in hass.states nachschauen (falls _lists noch nicht aktualisiert)
+    const stateEntry = Object.values(this._hass.states)
+      .find(e => e.entity_id.startsWith('todo.') &&
+            (e.attributes.friendly_name ?? '').toLowerCase() === 'papierkorb');
+    if (stateEntry) return stateEntry.entity_id;
+
+    // Neu anlegen
     try {
-      for (const todo of completed) {
-        await this._callWithTimeout(
-          this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
-        );
+      const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
+        handler: 'local_todo', show_advanced_options: false,
+      });
+      if (!step1?.flow_id) throw new Error('Kein flow_id');
+      await this._hass.callApi('POST', `config/config_entries/flow/${step1.flow_id}`, {
+        todo_list_name: 'Papierkorb',
+      });
+      // Warten bis Entität erscheint (max. 10 s)
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        const newState = Object.values(this._hass.states)
+          .find(e => e.entity_id.startsWith('todo.') &&
+                (e.attributes.friendly_name ?? '').toLowerCase() === 'papierkorb');
+        if (newState) return newState.entity_id;
       }
     } catch (e) {
-      console.warn('_deleteCompletedTodos failed/timeout:', e);
+      console.error('_getOrCreatePapierkorb error:', e);
+    }
+    return null;
+  }
+
+  _showRestoreDialog() {
+    const todo = this._detailTodo;
+    if (!todo) return;
+
+    const targetLists = this._lists.filter(l => !this._isPapierkorbList(l.id));
+    if (targetLists.length === 0) {
+      alert('Keine Zielliste verfügbar.');
+      return;
+    }
+
+    const overlay = this.shadowRoot.getElementById('dialog-overlay');
+    const box     = this.shadowRoot.getElementById('dialog-box');
+    box.innerHTML = `
+      <h3 style="margin:0 0 1rem">Wiederherstellen</h3>
+      <p style="font-size:0.9rem;color:var(--secondary-text-color,#666);margin:0 0 0.75rem;">Zielordner auswählen:</p>
+      <select id="restore-target-select" style="
+        width:100%;padding:0.5rem 0.75rem;border:1px solid var(--divider-color,#ddd);
+        border-radius:8px;font-size:1rem;background:var(--card-background-color,#fff);
+        color:var(--primary-text-color,#222);margin-bottom:1.25rem;box-sizing:border-box">
+        ${targetLists.map(l => `<option value="${l.id}">${this._esc(l.name)}</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+        <button id="restore-cancel-btn" style="
+          padding:0.45rem 1rem;border:1px solid var(--divider-color,#ddd);
+          border-radius:8px;background:none;color:var(--primary-text-color,#444);
+          font-size:0.95rem;cursor:pointer">Abbruch</button>
+        <button id="restore-ok-btn" style="
+          padding:0.45rem 1.2rem;border:none;border-radius:8px;
+          background:var(--primary-color,#1976d2);color:#fff;
+          font-size:0.95rem;cursor:pointer">OK</button>
+      </div>`;
+    overlay.classList.add('open');
+
+    const close = () => overlay.classList.remove('open');
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); }, { once: true });
+    box.querySelector('#restore-cancel-btn').addEventListener('click', close);
+    box.querySelector('#restore-ok-btn').addEventListener('click', async () => {
+      const targetId = box.querySelector('#restore-target-select').value;
+      close();
+      await this._restoreTodo(todo.uid, targetId);
+    });
+  }
+
+  async _restoreTodo(uid, targetListId) {
+    if (!this._isOnline()) return;
+    const todo = this._todos.find(t => t.uid === uid) ?? this._detailTodo;
+    if (!todo) return;
+
+    // Optimistisch aus Papierkorb entfernen
+    const backup = [...this._todos];
+    this._todos = this._todos.filter(t => t.uid !== uid);
+    this._closeDetail();
+    this._renderList();
+    this._updateSidebarBadge();
+
+    try {
+      await this._callWithTimeout(
+        this._hass.callService('todo', 'add_item', {
+          entity_id: targetListId,
+          item: todo.summary,
+          ...(todo.description ? { description: todo.description } : {}),
+          ...(todo.due
+            ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
+            : {}),
+        })
+      );
+      await this._callWithTimeout(
+        this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
+      );
+    } catch (e) {
+      console.warn('_restoreTodo failed:', e);
       this._todos = backup;
       this._renderList();
-      this._subscribeItems();
     }
   }
 
