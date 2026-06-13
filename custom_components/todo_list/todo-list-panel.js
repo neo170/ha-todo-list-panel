@@ -1,4 +1,4 @@
-const PANEL_VERSION = '1.0.120';
+const PANEL_VERSION = '1.0.121';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
@@ -3203,7 +3203,7 @@ class TodoListPanel extends HTMLElement {
         </svg>
       </div>
     ` + this._lists.map(l => {
-      const open = openPerList(l.id);
+      const open = openPerList(l);
       return `
         <button class="sidebar-item${l.id === this._selected ? ' active' : ''}" data-id="${l.id}">
           <ha-icon class="sidebar-item-icon" icon="${l.icon}"></ha-icon>
