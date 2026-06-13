@@ -43,7 +43,7 @@ async def _register_panel(hass: HomeAssistant) -> None:
         config={
             "_panel_custom": {
                 "name": "todo-list-panel",
-                "module_url": f"{static_path}/todo-list-panel.js",
+                "module_url": f"{static_path}/todo-list-panel.js?v={version}",
                 "embed_iframe": False,
                 "trust_external_script": True,
             }
