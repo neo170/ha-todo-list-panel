@@ -352,13 +352,17 @@ class TodoListPanel extends HTMLElement {
     if (!todo) return;
 
     const papierkorbId = await this._getOrCreatePapierkorb();
+    if (!papierkorbId) {
+      console.error('[TodoPanel] Papierkorb nicht verfügbar – lösche endgültig');
+    }
+
     const backup = [...this._todos];
     this._todos = this._todos.filter(t => t.uid !== uid);
     this._renderList();
     this._updateSidebarBadge();
 
     if (!papierkorbId) {
-      // Fallback: wirklich löschen
+      // Fallback: wirklich löschen (Papierkorb konnte nicht erstellt werden)
       try {
         await this._callWithTimeout(
           this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
@@ -3694,22 +3698,37 @@ class TodoListPanel extends HTMLElement {
 
   _isPapierkorbList(listId = this._selected) {
     const list = this._lists.find(l => l.id === listId);
-    return list?.name?.toLowerCase() === 'papierkorb';
+    return this._isPapierkorbEntity(list);
+  }
+
+  _isPapierkorbEntity(list) {
+    if (!list) return false;
+    const name = (list.name ?? '').toLowerCase().replace(/[^a-zäöüß]/g, '');
+    if (name === 'papierkorb') return true;
+    const id = (list.id ?? '').toLowerCase();
+    if (id === 'todo.papierkorb' || id.startsWith('todo.papierkorb_')) return true;
+    return false;
   }
 
   async _getOrCreatePapierkorb() {
-    // Bereits vorhanden?
-    const existing = this._lists.find(l => l.name.toLowerCase() === 'papierkorb');
+    // Bereits vorhanden in _lists?
+    const existing = this._lists.find(l => this._isPapierkorbEntity(l));
     if (existing) return existing.id;
 
     // Direkt in hass.states nachschauen (falls _lists noch nicht aktualisiert)
     const stateEntry = Object.values(this._hass.states)
-      .find(e => e.entity_id.startsWith('todo.') &&
-            (e.attributes.friendly_name ?? '').toLowerCase() === 'papierkorb');
+      .find(e => {
+        if (!e.entity_id.startsWith('todo.')) return false;
+        const fn = (e.attributes.friendly_name ?? '').toLowerCase().replace(/[^a-zäöüß]/g, '');
+        if (fn === 'papierkorb') return true;
+        if (e.entity_id === 'todo.papierkorb' || e.entity_id.startsWith('todo.papierkorb_')) return true;
+        return false;
+      });
     if (stateEntry) return stateEntry.entity_id;
 
     // Neu anlegen
     try {
+      console.info('[TodoPanel] Papierkorb nicht gefunden, erstelle neu…');
       const step1 = await this._hass.callApi('POST', 'config/config_entries/flow', {
         handler: 'local_todo', show_advanced_options: false,
       });
@@ -3722,12 +3741,14 @@ class TodoListPanel extends HTMLElement {
         await new Promise(r => setTimeout(r, 500));
         const newState = Object.values(this._hass.states)
           .find(e => e.entity_id.startsWith('todo.') &&
-                (e.attributes.friendly_name ?? '').toLowerCase() === 'papierkorb');
+                (e.entity_id === 'todo.papierkorb' || e.entity_id.startsWith('todo.papierkorb_') ||
+                 (e.attributes.friendly_name ?? '').toLowerCase() === 'papierkorb'));
         if (newState) return newState.entity_id;
       }
     } catch (e) {
       console.error('_getOrCreatePapierkorb error:', e);
     }
+    console.warn('[TodoPanel] Papierkorb konnte nicht gefunden/erstellt werden');
     return null;
   }
 
