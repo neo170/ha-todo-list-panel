@@ -1,11 +1,4 @@
-const PANEL_VERSION = (() => {
-  const url = new URL(import.meta.url);
-  // Try query param first (?v=), then extract from path (/todo_list_panel/X.Y.Z/)
-  const qv = url.searchParams.get('v');
-  if (qv && qv !== 'dev') return qv;
-  const m = url.pathname.match(/\/todo_list_panel\/([\d.]+)\//); 
-  return m ? m[1] : 'dev';
-})();
+const PANEL_VERSION = '1.0.118';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
