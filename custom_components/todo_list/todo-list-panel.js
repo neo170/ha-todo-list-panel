@@ -1,4 +1,4 @@
-const PANEL_VERSION = '1.0.121';
+const PANEL_VERSION = '1.0.122';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
@@ -326,6 +326,42 @@ class TodoListPanel extends HTMLElement {
     }
   }
 
+  // Aktualisiert den Badge einer beliebigen Liste in der Sidebar (per get_items vom Server)
+  async _updateSidebarBadgeForList(listId) {
+    const sidebar = this.shadowRoot.getElementById('sidebar');
+    if (!sidebar) return;
+    const btn = sidebar.querySelector(`.sidebar-item[data-id="${listId}"]`);
+    if (!btn) return;
+    try {
+      const result = await this._callWithTimeout(
+        this._hass.callWS({
+          type: 'call_service',
+          domain: 'todo',
+          service: 'get_items',
+          service_data: { entity_id: listId },
+          return_response: true,
+        }),
+        5000
+      );
+      const items = result?.response?.[listId]?.items ?? [];
+      const isPapierkorb = this._isPapierkorbList(listId);
+      const count = isPapierkorb ? items.length : items.filter(i => i.status !== 'completed').length;
+      let badge = btn.querySelector('.sidebar-item-badge');
+      if (count > 0) {
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'sidebar-item-badge';
+          btn.appendChild(badge);
+        }
+        badge.textContent = count;
+      } else {
+        badge?.remove();
+      }
+    } catch (e) {
+      console.warn('[TodoPanel] _updateSidebarBadgeForList failed:', e);
+    }
+  }
+
   async _deleteTodo(uid) {
     if (!this._isOnline()) return;
 
@@ -413,6 +449,9 @@ class TodoListPanel extends HTMLElement {
         this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
       );
       console.info('[TodoPanel] Verschiebung in Papierkorb erfolgreich');
+
+      // 4. Papierkorb-Badge in der Sidebar aktualisieren
+      this._updateSidebarBadgeForList(papierkorbId);
     } catch (e) {
       console.warn('_deleteTodo (move to Papierkorb) failed:', e);
       this._todos = backup;
@@ -3856,19 +3895,55 @@ class TodoListPanel extends HTMLElement {
     this._updateSidebarBadge();
 
     try {
+      // 1. Item in Zielliste anlegen
       await this._callWithTimeout(
-        this._hass.callService('todo', 'add_item', {
+        this._hass.callApi('POST', 'services/todo/add_item', {
           entity_id: targetListId,
           item: todo.summary,
-          ...(todo.description ? { description: todo.description } : {}),
+          description: todo.description ?? '',
           ...(todo.due
             ? (todo.due.includes('T') ? { due_datetime: todo.due } : { due_date: todo.due })
             : {}),
-        })
+        }),
+        10000
       );
+
+      // 2. Neues Item nach oben verschieben (letztes offenes Item = gerade hinzugefügt)
+      try {
+        const getResult = await this._callWithTimeout(
+          this._hass.callWS({
+            type: 'call_service',
+            domain: 'todo',
+            service: 'get_items',
+            service_data: { entity_id: targetListId },
+            return_response: true,
+          }),
+          10000
+        );
+        const items = getResult?.response?.[targetListId]?.items ?? [];
+        const openItems = items.filter(i => i.status !== 'completed');
+        const newItem = openItems[openItems.length - 1];
+        if (newItem && openItems.length > 1) {
+          await this._callWithTimeout(
+            this._hass.callWS({
+              type: 'todo/item/move',
+              entity_id: targetListId,
+              uid: newItem.uid,
+              previous_uid: undefined,
+            })
+          );
+        }
+      } catch (moveErr) {
+        console.warn('[TodoPanel] move-to-top after restore failed (non-critical):', moveErr);
+      }
+
+      // 3. Aus Papierkorb entfernen
       await this._callWithTimeout(
         this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
       );
+
+      // 4. Zielliste-Badge aktualisieren
+      this._updateSidebarBadgeForList(targetListId);
     } catch (e) {
       console.warn('_restoreTodo failed:', e);
       this._todos = backup;
