@@ -377,12 +377,12 @@ class TodoListPanel extends HTMLElement {
     try {
       console.info('[TodoPanel] Verschiebe in Papierkorb:', papierkorbId, 'item:', todo.summary);
 
-      // 1. Item im Papierkorb anlegen
+      // 1. Item im Papierkorb anlegen (REST-API wie iOS-App)
       await this._callWithTimeout(
-        this._hass.callService('todo', 'add_item', {
+        this._hass.callApi('POST', 'services/todo/add_item', {
           entity_id: papierkorbId,
           item: todo.summary,
-          ...(todo.description ? { description: todo.description } : {}),
+          description: todo.description ?? '',
         }),
         10000
       );
@@ -3702,10 +3702,10 @@ class TodoListPanel extends HTMLElement {
         for (const todo of completed) {
           if (papierkorbId) {
             await this._callWithTimeout(
-              this._hass.callService('todo', 'add_item', {
+              this._hass.callApi('POST', 'services/todo/add_item', {
                 entity_id: papierkorbId,
                 item: todo.summary,
-                ...(todo.description ? { description: todo.description } : {}),
+                description: todo.description ?? '',
               }),
               10000
             );
