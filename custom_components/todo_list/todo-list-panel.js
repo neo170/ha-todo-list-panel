@@ -1,4 +1,4 @@
-const PANEL_VERSION = '1.0.122';
+const PANEL_VERSION = '1.0.123';
 
 class TodoListPanel extends HTMLElement {
   constructor() {
@@ -2995,6 +2995,31 @@ class TodoListPanel extends HTMLElement {
       mainDropdown.classList.remove('open');
       if (!this._selected) return;
       const listName = this._lists.find(l => l.id === this._selected)?.name ?? this._selected;
+
+      // Papierkorb: nur Einträge leeren, nicht den Ordner löschen
+      if (this._isPapierkorbList()) {
+        const confirmed = await this._showConfirm(
+          'Papierkorb leeren',
+          `Alle Einträge im Papierkorb endgültig löschen?`,
+          'Leeren'
+        );
+        if (!confirmed) return;
+        try {
+          for (const todo of [...this._todos]) {
+            await this._callWithTimeout(
+              this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
+            );
+          }
+          this._todos = [];
+          this._renderList();
+          this._updateSidebarBadge();
+        } catch (e) {
+          console.warn('[TodoPanel] Papierkorb leeren fehlgeschlagen:', e);
+          this._subscribeItems();
+        }
+        return;
+      }
+
       const confirmed = await this._showConfirm(
         'Liste löschen',
         `„${listName}" wirklich löschen?\nDieser Vorgang kann nicht rückgängig gemacht werden.`,
