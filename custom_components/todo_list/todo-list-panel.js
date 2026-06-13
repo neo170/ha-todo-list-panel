@@ -375,16 +375,44 @@ class TodoListPanel extends HTMLElement {
     }
 
     try {
+      console.info('[TodoPanel] Verschiebe in Papierkorb:', papierkorbId, 'item:', todo.summary);
+
+      // 1. Item im Papierkorb anlegen
       await this._callWithTimeout(
         this._hass.callService('todo', 'add_item', {
           entity_id: papierkorbId,
           item: todo.summary,
           ...(todo.description ? { description: todo.description } : {}),
-        })
+        }),
+        10000
       );
+
+      // 2. Verifizieren, dass der Eintrag im Papierkorb angekommen ist
+      const verifyResult = await this._callWithTimeout(
+        this._hass.callWS({
+          type: 'call_service',
+          domain: 'todo',
+          service: 'get_items',
+          service_data: { entity_id: papierkorbId },
+          return_response: true,
+        }),
+        10000
+      );
+      const papierkorbItems = verifyResult?.response?.[papierkorbId]?.items ?? [];
+      const found = papierkorbItems.some(i => i.summary === todo.summary);
+
+      if (!found) {
+        console.error('[TodoPanel] Item wurde NICHT im Papierkorb gefunden nach add_item! Abbruch.');
+        this._todos = backup;
+        this._renderList();
+        return;
+      }
+
+      // 3. Erst jetzt aus der Quellliste entfernen
       await this._callWithTimeout(
         this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: uid })
       );
+      console.info('[TodoPanel] Verschiebung in Papierkorb erfolgreich');
     } catch (e) {
       console.warn('_deleteTodo (move to Papierkorb) failed:', e);
       this._todos = backup;
@@ -3678,8 +3706,28 @@ class TodoListPanel extends HTMLElement {
                 entity_id: papierkorbId,
                 item: todo.summary,
                 ...(todo.description ? { description: todo.description } : {}),
-              })
+              }),
+              10000
             );
+          }
+          // Verifizieren
+          if (papierkorbId) {
+            const verifyResult = await this._callWithTimeout(
+              this._hass.callWS({
+                type: 'call_service',
+                domain: 'todo',
+                service: 'get_items',
+                service_data: { entity_id: papierkorbId },
+                return_response: true,
+              }),
+              10000
+            );
+            const items = verifyResult?.response?.[papierkorbId]?.items ?? [];
+            const found = items.some(i => i.summary === todo.summary);
+            if (!found) {
+              console.error('[TodoPanel] Batch: Item nicht im Papierkorb angekommen:', todo.summary);
+              continue;
+            }
           }
           await this._callWithTimeout(
             this._hass.callService('todo', 'remove_item', { entity_id: this._selected, item: todo.uid })
